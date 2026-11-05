@@ -94,6 +94,9 @@ casters that vanish for one frame, which `altscore.py` (image based) often misse
 | `AR_LOG_WAIT_TIMEOUTS` | Kernel waits with a timeout that time out, per thread and object (5 s summary) |
 | `AR_DUMP_THREADS_FILE=<file>` | When that file appears, what every guest thread is doing, waiting ones too, with stacks: for a game that has stopped |
 | `AR_LOG_PLAYER_WAIT` | A media player's state as scene shutdown waits for it (`sub_824C8188`) |
+| `AR_LOG_GAME_SPEED` | Every 5 s, how fast the world runs against real time (1 is right), frame rate, mean step, longest frame |
+| `AR_TEST_FRAME_DELAY_MS=<ms>` | A slower machine: every frame of a match takes this much longer |
+| `AR_TEST_NET_DELAY_MS`, `AR_TEST_NET_JITTER_MS`, `AR_TEST_NET_LOSS_PERCENT` | A real network, on what this copy sends (loss on UDP only) |
 
 ## Turning features off (bisecting)
 
@@ -110,6 +113,7 @@ casters that vanish for one frame, which `altscore.py` (image based) often misse
 | `AR_NO_POINT_SNAP`, `AR_NO_FILTER_OVERRIDE` | Point sample snapping, instruction filter overrides |
 | `AR_NO_DEPTH_24` | Keeping depth to the guest's precision (see LESSONS) |
 | `AR_NO_MOVIE_SKIP`, `AR_NO_SIM_FPS_CAP`, `AR_NO_CLICK_FIRE` | Skipping movies; 30 fps in the Tutorial and multiplayer matches; left click firing while aiming |
+| `AR_NO_MATCH_STEP_FIX` | Letting the world's step go past 2 in a match, so a machine below 15 fps drops frames instead of slowing down |
 | `AR_NO_MATCH_CPUS`, `AR_KEEP_RANKED_MENU` | The host adding CPU players once everyone in a Player Match lobby is Ready; greying out Ranked Match and Leaderboards |
 | `AR_NO_DEPTH_CLIP`, `AR_NO_DEPTH_TEST` | Depth clipping (clamps instead), depth testing |
 | `AR_NO_STATE_CACHE`, `AR_FULL_HASH`, `AR_FULL_CONSTANTS`, `AR_FULL_VERTEX_BUFFERS` | Skipping redundant state, sampled hashes, constant and vertex range trimming |

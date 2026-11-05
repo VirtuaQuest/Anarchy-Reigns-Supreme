@@ -320,6 +320,83 @@ namespace imports
         return XNET_GET_XNADDR_NONE;
     }
 
+    // The title's messages over TCP are small and few, and Windows would hold them back to join them together.
+    static void NoDelay(SOCKET host)
+    {
+        BOOL on = TRUE;
+        ::setsockopt(host, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&on), sizeof(on));
+    }
+
+    // Testing what a real network does, between copies on one machine: AR_TEST_NET_DELAY_MS, AR_TEST_NET_JITTER_MS and AR_TEST_NET_LOSS_PERCENT (UDP only) on what this copy sends.
+    struct DelayedPacket
+    {
+        std::chrono::steady_clock::time_point due;
+        SOCKET host;
+        bool datagram;
+        sockaddr_in to;
+        std::vector<char> data;
+    };
+
+    static bool SendDelayed(SOCKET host, bool datagram, const sockaddr_in* to, const char* data, int length)
+    {
+        static const int delay = AR_ENV("AR_TEST_NET_DELAY_MS") ? atoi(AR_ENV("AR_TEST_NET_DELAY_MS")) : 0, jitter = AR_ENV("AR_TEST_NET_JITTER_MS") ? atoi(AR_ENV("AR_TEST_NET_JITTER_MS")) : 0,
+            loss = AR_ENV("AR_TEST_NET_LOSS_PERCENT") ? atoi(AR_ENV("AR_TEST_NET_LOSS_PERCENT")) : 0;
+        if (delay == 0 && jitter == 0 && loss == 0)
+            return false;
+        static std::mutex mutex;
+        static std::condition_variable wake;
+        static std::deque<DelayedPacket> queue;
+        static std::mt19937 random{ std::random_device{}() };
+        static std::once_flag started;
+        std::call_once(started, []
+            {
+                std::thread([]
+                    {
+                        std::unique_lock lock(mutex);
+                        while (true)
+                        {
+                            if (queue.empty())
+                            {
+                                wake.wait(lock);
+                                continue;
+                            }
+                            auto due = queue.front().due;
+                            if (std::chrono::steady_clock::now() < due)
+                            {
+                                lock.unlock();
+                                std::this_thread::sleep_until(due);
+                                lock.lock();
+                                continue;
+                            }
+                            DelayedPacket packet = std::move(queue.front());
+                            queue.pop_front();
+                            lock.unlock();
+                            if (packet.datagram)
+                                ::sendto(packet.host, packet.data.data(), int(packet.data.size()), 0, reinterpret_cast<const sockaddr*>(&packet.to), sizeof(packet.to));
+                            else
+                                ::send(packet.host, packet.data.data(), int(packet.data.size()), 0);
+                            lock.lock();
+                        }
+                    }).detach();
+            });
+        std::lock_guard lock(mutex);
+        if (datagram && loss > 0 && int(random() % 100) < loss)
+            return true;
+        DelayedPacket packet;
+        packet.due = std::chrono::steady_clock::now() + std::chrono::milliseconds(delay + (jitter > 0 ? int(random() % uint32_t(jitter + 1)) : 0));
+        // Kept in order, as a stream has to be: a late one holds up what follows.
+        if (!queue.empty() && packet.due < queue.back().due)
+            packet.due = queue.back().due;
+        packet.host = host;
+        packet.datagram = datagram;
+        if (to != nullptr)
+            packet.to = *to;
+        packet.data.assign(data, data + length);
+        queue.push_back(std::move(packet));
+        wake.notify_one();
+        return true;
+    }
+
     int32_t NetDll_socket(uint32_t caller, uint32_t family, uint32_t type, uint32_t protocol)
     {
         if (!net::Online())
@@ -330,6 +407,8 @@ namespace imports
         SOCKET host = ::socket(AF_INET, datagram ? SOCK_DGRAM : SOCK_STREAM, datagram ? IPPROTO_UDP : IPPROTO_TCP);
         if (host == INVALID_SOCKET)
             return FailFromHost();
+        if (!datagram)
+            NoDelay(host);
         std::lock_guard lock(net::g_socketsMutex);
         uint32_t handle = net::g_nextSocket++;
         net::g_sockets[handle] = { host, datagram };
@@ -443,6 +522,7 @@ namespace imports
         SOCKET host = ::accept(guest.host, reinterpret_cast<sockaddr*>(&from), &size);
         if (host == INVALID_SOCKET)
             return FailFromHost();
+        NoDelay(host);
         Trace("accept socket {} from port {}", socket, ntohs(from.sin_port));
         net::WriteAddress(address, length, from);
         std::lock_guard lock(net::g_socketsMutex);
@@ -548,6 +628,8 @@ namespace imports
         auto guest = net::FindSocket(socket);
         if (guest.host == INVALID_SOCKET)
             return Fail();
+        if (SendDelayed(guest.host, false, nullptr, g_memory.Translate<const char>(buffer), int(length)))
+            return int32_t(length);
         int result = ::send(guest.host, g_memory.Translate<const char>(buffer), int(length), int(flags));
         CountTraffic(socket, true, result);
         Trace("send socket {} {} of {} bytes {}", socket, result, length, Bytes(g_memory.Translate<char>(buffer), int(length)));
@@ -560,6 +642,8 @@ namespace imports
         if (guest.host == INVALID_SOCKET)
             return Fail();
         sockaddr_in address = net::ReadAddress(to);
+        if (SendDelayed(guest.host, true, &address, g_memory.Translate<const char>(buffer), int(length)))
+            return int32_t(length);
         int result = ::sendto(guest.host, g_memory.Translate<const char>(buffer), int(length), int(flags), reinterpret_cast<sockaddr*>(&address), sizeof(address));
         CountTraffic(socket, true, result);
         const uint8_t* toBytes = g_memory.Translate<const uint8_t>(to);

@@ -1196,8 +1196,63 @@ PPC_FUNC(sub_82BD7EC8)
             PPC_STORE_U32(address, value);
     }
 
+    // Whether this is a match with others: a session open and none of the menu flags.
+    // (The camera has a player to follow, which the lobby hasn't.)
+    bool inMatch = net::Online() && net::InSession() && (PPC_LOAD_U32(0x83214CF0) & 0x02200000) == 0 && PPC_LOAD_U32(0x83121290) == 0xFFFFFFFF && PPC_LOAD_U32(0x831C51C0 + 6208) != 0;
+
+    // Testing a slower machine on this one (AR_TEST_FRAME_DELAY_MS, in matches): every frame takes this much longer.
+    static const int frameDelay = AR_ENV("AR_TEST_FRAME_DELAY_MS") ? atoi(AR_ENV("AR_TEST_FRAME_DELAY_MS")) : 0;
+    if (frameDelay > 0 && inMatch)
+        std::this_thread::sleep_for(std::chrono::milliseconds(frameDelay));
+
     __imp__sub_82BD7EC8(ctx, base);
     g_updateNumber.fetch_add(1, std::memory_order_relaxed);
+
+    // The title limits the step to 2, so below 15 fps its world runs slow. Alone that's better than a jump, but in a match the others go on at full speed, so a slow machine
+    // should show fewer frames of the same match (AR_NO_MATCH_STEP_FIX keeps the limit; beyond the new one it does slow down).
+    static const bool matchStep = !AR_ENV("AR_NO_MATCH_STEP_FIX");
+    if (matchStep && inMatch)
+    {
+        static constexpr float MATCH_MAX_STEP = 4.0f;
+        uint32_t stepBits = PPC_LOAD_U32(0x830778C8), measuredBits = PPC_LOAD_U32(0x830C6B7C);
+        float step, measured;
+        memcpy(&step, &stepBits, 4);
+        memcpy(&measured, &measuredBits, 4);
+        if (step == 2.0f && measured > 2.0f)
+        {
+            float wanted = std::min(measured, MATCH_MAX_STEP);
+            uint32_t wantedBits;
+            memcpy(&wantedBits, &wanted, 4);
+            PPC_STORE_U32(0x830778C8, wantedBits);
+            GuestToHostFunction<void>(0x82BC6DE8);
+        }
+    }
+
+    // Diagnostics (AR_LOG_GAME_SPEED): how fast the world runs against real time, with the frame rate, every 5 s. 1 is right.
+    static const bool logSpeed = AR_ENV("AR_LOG_GAME_SPEED") != nullptr;
+    if (logSpeed)
+    {
+        static auto last = std::chrono::steady_clock::now(), lastFrame = last;
+        static double steps, longest;
+        static uint32_t frames;
+        auto now = std::chrono::steady_clock::now();
+        uint32_t bits = PPC_LOAD_U32(0x830778C8);
+        float step;
+        memcpy(&step, &bits, 4);
+        steps += step;
+        frames++;
+        longest = std::max(longest, std::chrono::duration<double, std::milli>(now - lastFrame).count());
+        lastFrame = now;
+        double seconds = std::chrono::duration<double>(now - last).count();
+        if (seconds >= 5.0)
+        {
+            LOGF_INFO("game speed {:.3f}, {:.1f} fps, mean step {:.2f}, longest frame {:.0f} ms{}", steps / 30.0 / seconds, frames / seconds, steps / frames, longest, inMatch ? ", in a match" : "");
+            last = now;
+            steps = 0.0;
+            longest = 0.0;
+            frames = 0;
+        }
+    }
 
     ScanTimers(base);
     RunFind(base);
