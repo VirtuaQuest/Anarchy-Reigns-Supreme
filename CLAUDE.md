@@ -18,8 +18,10 @@ things are the way they are) and `docs/DEBUGGING.md` for the switches and test s
 
 ## Build and run
 
-- The build uses the XenonRecomp fork checked out next to this folder (`../XenonRecomp`, from the link in `README.md`;
-  `XENONRECOMP_ROOT` overrides the path).
+- The build uses the copy of the XenonRecomp fork in `thirdparty/XenonRecomp`, so one clone builds. `XENONRECOMP_ROOT`
+  (CMake cache or, for Setup, the environment) points it at a checkout instead, such as `../XenonRecomp` while working
+  on the recompiler. After a recompiler change is committed there, refresh the copy with
+  `python tools/update_xenonrecomp.py ../XenonRecomp` and commit it.
 - `Setup.bat` opens Setup, which does a whole build from a player's copy of the game, for anyone without this PC's layout. `tools/ui` is the look it shares with the launcher.
 - `tools\build.bat [ARRecomp|ARLauncher|ARShaderTool]` — Ninja, clang-cl (a portable LLVM 19 in `LLVM_DIR` or
   `..\_tools\llvm`, otherwise the PATH), VS 2022, RelWithDebInfo, into `out\build`. DXC comes from the

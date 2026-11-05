@@ -17,7 +17,7 @@ if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 endif()
 
 # XenonRecomp provides the recompiler, XenonUtils (XEX loading) and shared third party libraries.
-set(XENONRECOMP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../XenonRecomp" CACHE PATH "Path to the XenonRecomp checkout")
+set(XENONRECOMP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/XenonRecomp" CACHE PATH "Path to XenonRecomp: the copy in this project, or a checkout to work on")
 add_subdirectory(${XENONRECOMP_ROOT} XenonRecomp EXCLUDE_FROM_ALL)
 
 add_library(o1heap STATIC "thirdparty/o1heap/o1heap.c")

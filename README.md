@@ -30,11 +30,10 @@ You need:
 - [LLVM](https://llvm.org/) (`clang-cl`), or "C++ Clang tools for Windows" in the Visual Studio installer.
 - About 5 GB of free disk space.
 
-Get this project and the recompiler it uses, side by side in the same folder. The recompiler's folder has to be named `XenonRecomp`:
+Get this project. It includes everything the build needs, the recompiler too, so cloning it or downloading it as a ZIP (**Code**, **Download ZIP**) are both fine:
 
 ```
 git clone https://github.com/VirtuaQuest/Anarchy-Reigns-Supreme.git
-git clone --recurse-submodules https://github.com/VirtuaQuest/XenonRecomp.git
 ```
 
 Then run `Setup.bat` in `Anarchy-Reigns-Supreme`. Choose your game and, if you have it, your DLC folder, and press **Build**. Setup shows what it found and how far along it is. On a 10 core PC the whole build took about 6 minutes.
@@ -88,6 +87,6 @@ The programs you build contain the game's code, and their icon comes from the ga
 
 ## Credits and license
 
-GPL-3.0, see [LICENSE](LICENSE). Built on [XenonRecomp](https://github.com/hedge-dev/XenonRecomp) and the runtime of [Unleashed Recompiled](https://github.com/hedge-dev/UnleashedRecomp), with parts of [Xenia](https://github.com/xenia-project/xenia); see `thirdparty` for the others. The keyboard and mouse prompts are original drawings, with text in [Noto Sans](https://fonts.google.com/noto/specimen/Noto+Sans) (SIL Open Font License).
+GPL-3.0, see [LICENSE](LICENSE). Built on [XenonRecomp](https://github.com/hedge-dev/XenonRecomp) (MIT; this project's fork of it, [VirtuaQuest/XenonRecomp](https://github.com/VirtuaQuest/XenonRecomp), is copied into `thirdparty/XenonRecomp` with its libraries and their licenses) and the runtime of [Unleashed Recompiled](https://github.com/hedge-dev/UnleashedRecomp), with parts of [Xenia](https://github.com/xenia-project/xenia); see `thirdparty` for the others. The keyboard and mouse prompts are original drawings, with text in [Noto Sans](https://fonts.google.com/noto/specimen/Noto+Sans) (SIL Open Font License).
 
 More for developers: [docs/LESSONS.md](docs/LESSONS.md) and [docs/DEBUGGING.md](docs/DEBUGGING.md).

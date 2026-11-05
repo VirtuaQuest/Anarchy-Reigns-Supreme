@@ -1,2 +1,4 @@
 # Shell scripts must keep Unix line endings, or bash fails on the carriage returns.
 *.sh text eol=lf
+# Batch files need Windows line endings, in a clone or a ZIP download alike, or cmd can miss their labels.
+*.bat text eol=crlf

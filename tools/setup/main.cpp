@@ -276,7 +276,8 @@ namespace
         for (const auto& entry : fs::directory_iterator(programs / L"Windows Kits\\10\\bin", ec))
             tools.sdk |= Exists(entry.path() / L"x64\\dxcompiler.dll");
 
-        fs::path xenon = GetEnv(L"XENONRECOMP_ROOT").empty() ? g_root.parent_path() / L"XenonRecomp" : fs::path(GetEnv(L"XENONRECOMP_ROOT"));
+        // The copy of the recompiler in this project, unless XENONRECOMP_ROOT names a checkout to build with instead.
+        fs::path xenon = GetEnv(L"XENONRECOMP_ROOT").empty() ? g_root / L"thirdparty" / L"XenonRecomp" : fs::path(GetEnv(L"XENONRECOMP_ROOT"));
         if (Exists(xenon / L"XenonUtils\\ppc_context.h") && !fs::is_empty(xenon / L"thirdparty\\simde", ec) && !ec)
             tools.xenonRecomp = xenon;
 
@@ -295,7 +296,7 @@ namespace
         show(1, g_tools.sdk, L"Windows SDK", L"add it in that installer");
         show(2, !g_tools.clang.empty(), L"LLVM clang-cl", L"install LLVM");
         show(3, !g_tools.cmake.empty() && !g_tools.ninja.empty(), L"CMake and Ninja", L"add CMake in VS installer");
-        show(4, !g_tools.xenonRecomp.empty(), L"XenonRecomp", L"clone next to this folder");
+        show(4, !g_tools.xenonRecomp.empty(), L"XenonRecomp", L"missing, download this project again");
         show(5, g_tools.disk, L"5 GB of disk space", L"not enough free");
     }
 
