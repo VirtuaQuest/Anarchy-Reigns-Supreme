@@ -13,18 +13,18 @@ things are the way they are) and `docs/DEBUGGING.md` for the switches and test s
   profiler).
 - `thirdparty/xenia` — BSD subset of Xenia (microcode parser). `tools/launcher` (ARLauncher), `tools/shader_tool`
   (ARShaderTool: disassemble or translate dumped shaders), `tools/test` (test runners).
-- Reference code: Xenia (`src/xenia/gpu`) and XenosRecomp at `C:\Downloads\Repos\_tools\ref`, UnleashedRecomp at
-  `C:\Downloads\Repos\UnleashedRecomp`.
+- Reference code, where a checkout has it next to this folder: Xenia (`src/xenia/gpu`) and XenosRecomp at `..\_tools\ref`,
+  UnleashedRecomp at `..\UnleashedRecomp`.
 
 ## Build and run
 
-- The build uses the XenonRecomp fork checked out next to this folder (`../XenonRecomp`, tested with branch `xenon-doax2` of the same
-  GitHub repository; `XENONRECOMP_ROOT` overrides the path).
+- The build uses the XenonRecomp fork checked out next to this folder (`../XenonRecomp`, from the link in `README.md`;
+  `XENONRECOMP_ROOT` overrides the path).
 - `Setup.bat` opens Setup, which does a whole build from a player's copy of the game, for anyone without this PC's layout. `tools/ui` is the look it shares with the launcher.
-- `tools\build.bat [ARRecomp|ARLauncher|ARShaderTool]` — Ninja, clang-cl (portable LLVM 19 at
-  `C:\Downloads\Repos\_tools\llvm`), VS 2022 Build Tools, RelWithDebInfo, into `out\build`. DXC comes from the
+- `tools\build.bat [ARRecomp|ARLauncher|ARShaderTool]` — Ninja, clang-cl (a portable LLVM 19 in `LLVM_DIR` or
+  `..\_tools\llvm`, otherwise the PATH), VS 2022, RelWithDebInfo, into `out\build`. DXC comes from the
   Windows SDK and is copied next to the exe.
-- Run from `run\`: `..\out\build\ARRecomp\ARRecomp.exe --game "C:\Downloads\Repos\Anarchy Reigns\Anarchy Reigns.iso"`,
+- Run from `run\`: `..\out\build\ARRecomp\ARRecomp.exe --game "<your disc image>"`,
   or `out\build\ARRecomp\ARLauncher.exe` (settings in `launcher.ini` next to it, with paths relative to it; the defaults in `tools/launcher/launcher.ini` are
   copied there only if it has none).
 - If the exe is locked because the game is running, rename it (`ARRecomp.running.exe`) instead of closing the game.

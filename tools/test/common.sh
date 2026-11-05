@@ -1,12 +1,12 @@
 # Shared setup for the test runners (sourced). Runs happen in run/ like a normal launch.
-#   AR_ISO     disc image (default: the developer's copy)
+#   AR_ISO     disc image (default: Anarchy Reigns/Anarchy Reigns.iso next to this project)
 #   AR_EXE     executable (default: out/build/ARRecomp/ARRecomp.exe)
 # Git Bash started from PowerShell or cmd puts Windows first on PATH, where timeout.exe is a different program.
 export PATH="/usr/bin:$PATH"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 RUN="$REPO/run"
 EXE="${AR_EXE:-$REPO/out/build/ARRecomp/ARRecomp.exe}"
-ISO="${AR_ISO:-C:/Downloads/Repos/Anarchy Reigns/Anarchy Reigns.iso}"
+ISO="${AR_ISO:-$REPO/../Anarchy Reigns/Anarchy Reigns.iso}"
 TOOLS="$REPO/tools/test"
 
 # From the title screen into Beer Street gameplay with the save in run/user (gameplay starts around frame 2400).

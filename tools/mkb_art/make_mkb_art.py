@@ -2,12 +2,15 @@
 # the UI): button icons (256 x 256, one version for gameplay and one for menus) and the controller diagram (512 x 512), every
 # piece at the same place as in the original, since the UI's quads stay the same. Writes ARRecomp/gpu/mkb_art.inl (alpha planes,
 # run length encoded). Contains no game art.
+# Its text is drawn with Noto Sans (SIL Open Font License; https://fonts.google.com/noto/specimen/Noto+Sans), which isn't stored here:
+# installed in Windows, or in the folder MKB_FONT_DIR names, as NotoSans-Bold.ttf, NotoSans-Condensed.ttf and NotoSans-CondensedBold.ttf.
 # Usage: python make_mkb_art.py [preview folder]
 import os, sys
 from PIL import Image, ImageDraw, ImageFont
 
 SS = 4  # Supersampling.
-FONT = 'C:/Windows/Fonts/arialbd.ttf'
+FONT_DIR = os.environ.get('MKB_FONT_DIR', 'C:/Windows/Fonts')
+FONT = os.path.join(FONT_DIR, 'NotoSans-Bold.ttf')
 
 
 def canvas(size):
@@ -269,15 +272,14 @@ def diagram():
 
 # ---- Overlay: what the renderer draws on top of the game for the rows added to Options, and the two controls pages ----
 
-BAHN = 'C:/Windows/Fonts/bahnschrift.ttf'
+CONDENSED = {'Regular': 'NotoSans-Condensed.ttf', 'Bold': 'NotoSans-CondensedBold.ttf'}
+CONDENSED_SCALE = 0.86  # So the longest rows of the keyboard page fit their columns.
 OVERLAY_TEXTS = ['MOUSE AIMING CAMERA', 'CONTROLLER CONTROLS', 'KEYBOARD AND MOUSE CONTROLS', 'CONTROLLER AIMING CAMERA',
                  'N', 'Y', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'UP/DOWN', 'LEFT/RIGHT', 'SPEED']
 
 
-def bahn(px, name='SemiBold Condensed'):
-    f = ImageFont.truetype(BAHN, int(px * SS))
-    f.set_variation_by_name(name)
-    return f
+def condensed(px, weight='Regular'):
+    return ImageFont.truetype(os.path.join(FONT_DIR, CONDENSED[weight]), int(px * CONDENSED_SCALE * SS))
 
 
 def overlay_atlas():
@@ -286,7 +288,7 @@ def overlay_atlas():
     im = Image.new('L', (w * SS, h * SS), 0)
     d = ImageDraw.Draw(im)
     d.rectangle((0, 0, 8 * SS, 8 * SS), fill=255)
-    f = bahn(24)
+    f = condensed(24)
     x, y = 12, 0
     rects = []
     for s in OVERLAY_TEXTS:
@@ -322,8 +324,8 @@ def pad_picture(d, cx, cy, s):
     d.rectangle(box(-84, 30, -36, 54), outline=255, width=line)
     for x, y, c in ((120, -35, 'Y'), (95, -10, 'X'), (145, -10, 'B'), (120, 15, 'A')):
         d.ellipse(box(x - 16, y - 16, x + 16, y + 16), outline=255, width=line)
-        l, t, r, b = d.textbbox((0, 0), c, font=bahn(22 * s, 'Bold Condensed'))
-        d.text((int((cx + x * s) * SS) - (r - l) // 2 - l, int((cy + y * s) * SS) - (b - t) // 2 - t), c, font=bahn(22 * s, 'Bold Condensed'), fill=255)
+        l, t, r, b = d.textbbox((0, 0), c, font=condensed(22 * s, 'Bold'))
+        d.text((int((cx + x * s) * SS) - (r - l) // 2 - l, int((cy + y * s) * SS) - (b - t) // 2 - t), c, font=condensed(22 * s, 'Bold'), fill=255)
     for x, c in ((-38, 'BACK'), (38, 'START')):
         d.rounded_rectangle(box(x - 22, -40, x + 22, -22), int(6 * s * SS), outline=255, width=int(2 * SS))
     d.ellipse(box(-20, -60, 20, -20), outline=255, width=line)
@@ -336,7 +338,7 @@ def controls_page(title, left, right):
     page_title(d, title)
     text(d, (240, 170, 1040, 215), 'The diagram appears here after the first loading screen', 200, 0.6)
     y0 = 300
-    label, value = bahn(21), bahn(21, 'Bold Condensed')
+    label, value = condensed(21), condensed(21, 'Bold')
     rows = max(len(left), len(right))
     step = (668 - y0) / ((rows + 1) // 2)
     for x, items in ((70, left), (660, right)):
@@ -352,7 +354,7 @@ def controls_page(title, left, right):
 
 
 def page_title(d, title):
-    f = bahn(40, 'Bold Condensed')
+    f = condensed(40, 'Bold')
     l, t, r, b = d.textbbox((0, 0), title, font=f)
     d.text((640 * SS - (r - l) // 2 - l, 34 * SS - t), title, font=f, fill=255)
     d.line((90 * SS, 88 * SS, 1190 * SS, 88 * SS), fill=255, width=2 * SS)
@@ -401,7 +403,7 @@ def page_font():
     cells = []
     x, y = 0, 0
     height = 28
-    for f in (bahn(21), bahn(21, 'Bold Condensed')):
+    for f in (condensed(21), condensed(21, 'Bold')):
         for code in range(FONT_FIRST, FONT_LAST + 1):
             c = chr(code)
             advance = f.getlength(c) / SS
