@@ -1207,6 +1207,7 @@ PPC_FUNC(sub_82BD7EC8)
 
     __imp__sub_82BD7EC8(ctx, base);
     g_updateNumber.fetch_add(1, std::memory_order_relaxed);
+    net::PollMotionLog(base);
 
     // The title limits the step to 2, so below 15 fps its world runs slow. Alone that's better than a jump, but in a match the others go on at full speed, so a slow machine
     // should show fewer frames of the same match (AR_NO_MATCH_STEP_FIX keeps the limit; beyond the new one it does slow down).
