@@ -85,7 +85,7 @@ What to expect:
 - Hits can look out of step between players: an attacked player's animation may jump or restart on the attacker's screen. Damage has agreed between the two copies in tests.
 - Matches are limited to 30 fps at any setting. A slower PC drops frames to keep up, and only slows down below about 7.5 fps.
 - Most testing has been between two copies on one PC, with some between two PCs. Play over the internet hasn't been tried.
-- Use the same build on every PC. Each copy uses a block of 16 UDP and TCP ports from 36000 up, which a firewall has to allow.
+- Use the same build on every PC. Each copy uses a block of 16 UDP and TCP ports from 36000 up, which a firewall has to allow. When Multiplayer is on, the launcher checks Windows Firewall and offers to let the game through.
 
 ## Sharing
 

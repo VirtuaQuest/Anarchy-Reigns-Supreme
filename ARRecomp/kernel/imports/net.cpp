@@ -4,13 +4,23 @@
 // With AR_ONLINE (an experiment, see docs/LESSONS.md) sockets are real ones and copies of the game find each other directly, without any service:
 // - Each copy has a block of 16 UDP/TCP ports from 36000 up, the first free one, so several can run on one machine. A title port becomes base + (port & 15).
 // - The title sees other copies through "secure addresses" (1.0.0.n), each standing for a machine's IP and port base, as it would on Xbox Live.
+// - Each UDP packet starts with a small header saying which copy sent it and from which title port (see WriteHeader), so a copy is known by its packets
+//   even when they come from another address than it gave: a second network adapter, a VPN, or a router that changes ports.
 #include <stdafx.h>
 #include <kernel/imports.h>
 #include <kernel/net_session.h>
+#include <bitset>
 #include <random>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mstcpip.h>
+#include <iphlpapi.h>
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "iphlpapi.lib")
+
+#ifndef SIO_UDP_CONNRESET
+#define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR, 12)
+#endif
 
 constexpr int32_t X_SOCKET_ERROR = -1;
 constexpr uint32_t X_WSAEINVAL = 10022;
@@ -32,6 +42,73 @@ namespace net
     static uint32_t g_localIp; // Network byte order, as in memory.
     static SOCKET g_portHolder = INVALID_SOCKET;
     static std::array<uint8_t, 20> g_onlineId;
+
+    void IgnoreUnreachable(uint64_t socket)
+    {
+        BOOL off = FALSE;
+        DWORD bytes = 0;
+        WSAIoctl(SOCKET(socket), SIO_UDP_CONNRESET, &off, sizeof(off), nullptr, 0, &bytes, nullptr, nullptr);
+    }
+
+    // Each working IPv4 address of this PC with its prefix length, leaving out the loopback.
+    static std::vector<std::pair<uint32_t, uint32_t>> AdapterAddresses()
+    {
+        std::vector<std::pair<uint32_t, uint32_t>> found;
+        ULONG size = 16 * 1024;
+        std::vector<uint8_t> buffer;
+        ULONG result = ERROR_BUFFER_OVERFLOW;
+        for (int attempt = 0; attempt < 3 && result == ERROR_BUFFER_OVERFLOW; attempt++)
+        {
+            buffer.resize(size);
+            result = GetAdaptersAddresses(AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER, nullptr,
+                reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data()), &size);
+        }
+        if (result != NO_ERROR)
+            return found;
+        for (auto* adapter = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data()); adapter != nullptr; adapter = adapter->Next)
+        {
+            if (adapter->OperStatus != IfOperStatusUp || adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK)
+                continue;
+            for (auto* unicast = adapter->FirstUnicastAddress; unicast != nullptr; unicast = unicast->Next)
+            {
+                if (unicast->Address.lpSockaddr->sa_family != AF_INET)
+                    continue;
+                uint32_t ip = reinterpret_cast<sockaddr_in*>(unicast->Address.lpSockaddr)->sin_addr.s_addr;
+                if ((ntohl(ip) >> 24) == 127 || (ntohl(ip) >> 16) == 0xA9FE) // Loopback, and link-local addresses an adapter gives itself without a network.
+                    continue;
+                found.push_back({ ip, unicast->OnLinkPrefixLength });
+            }
+        }
+        return found;
+    }
+
+    std::vector<uint32_t> BroadcastAddresses()
+    {
+        std::vector<uint32_t> found;
+        for (const auto& [ip, prefix] : AdapterAddresses())
+        {
+            if (prefix == 0 || prefix >= 31)
+                continue;
+            uint32_t broadcast = htonl(ntohl(ip) | (0xFFFFFFFFu >> prefix));
+            if (std::find(found.begin(), found.end(), broadcast) == found.end())
+                found.push_back(broadcast);
+        }
+        return found;
+    }
+
+    bool ResolveAddress(const std::string& text, uint32_t& address)
+    {
+        if (inet_pton(AF_INET, text.c_str(), &address) == 1)
+            return true;
+        addrinfo hints{}, * result = nullptr;
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_DGRAM;
+        if (text.empty() || getaddrinfo(text.c_str(), nullptr, &hints, &result) != 0 || result == nullptr)
+            return false;
+        address = reinterpret_cast<sockaddr_in*>(result->ai_addr)->sin_addr.s_addr;
+        freeaddrinfo(result);
+        return true;
+    }
 
     static void Start()
     {
@@ -74,7 +151,16 @@ namespace net
                             g_localIp = me.sin_addr.s_addr;
                     }
                     closesocket(probe);
+                    // No way out to the world, as on a network of its own: an address of a network adapter instead.
+                    if (g_localIp == htonl(INADDR_LOOPBACK))
+                    {
+                        auto adapters = AdapterAddresses();
+                        if (!adapters.empty())
+                            g_localIp = adapters.front().first;
+                    }
                 }
+                if (g_portHolder != INVALID_SOCKET)
+                    IgnoreUnreachable(uint64_t(g_portHolder));
 
                 std::mt19937 random{ std::random_device{}() };
                 for (uint8_t& byte : g_onlineId)
@@ -94,10 +180,17 @@ namespace net
     // Peers, by their index in the secure address.
     struct Peer
     {
-        uint32_t ip;
-        uint16_t base;
-        uint8_t xnaddr[36];
-        bool hasAddress;
+        uint32_t ip = 0;
+        uint16_t base = 0;
+        uint8_t xnaddr[36] = {};
+        bool hasAddress = false;
+        // Which copy it is (the start of its XNADDR's online id, also in its packets' header).
+        uint32_t tag = 0;
+        bool hasTag = false;
+        // Where its packets really came from, by port of its block: where answers go, as a router or another network adapter can make that different
+        // from the address it gave.
+        std::array<sockaddr_in, PORT_BLOCK> seen{};
+        std::bitset<PORT_BLOCK> hasSeen;
     };
     static std::mutex g_peersMutex;
     static std::vector<Peer> g_peers;
@@ -108,19 +201,84 @@ namespace net
         return htonl(0x01000000u | uint32_t(index + 1));
     }
 
-    static uint32_t PeerByReal(uint32_t ip, uint16_t base)
+    static size_t AddPeer(uint32_t ip, uint16_t base)
     {
-        std::lock_guard lock(g_peersMutex);
+        Peer peer;
+        peer.ip = ip;
+        peer.base = base;
+        g_peers.push_back(peer);
+        return g_peers.size() - 1;
+    }
+
+    // A peer from an address alone (an XNADDR without an id, a TCP connection, or a packet without a header). The caller holds g_peersMutex.
+    static size_t PeerIndexByAddress(uint32_t ip, uint16_t port)
+    {
+        uint16_t base = port & ~uint16_t(PORT_BLOCK - 1);
         for (size_t i = 0; i < g_peers.size(); i++)
         {
             if (g_peers[i].ip == ip && g_peers[i].base == base)
-                return SecureAddress(i);
+                return i;
         }
-        g_peers.push_back({ ip, base, {}, false });
-        return SecureAddress(g_peers.size() - 1);
+        // Where its packets came from, which may differ from what it said.
+        size_t match = SIZE_MAX;
+        int matches = 0;
+        for (size_t i = 0; i < g_peers.size(); i++)
+        {
+            bool sameIp = g_peers[i].ip == ip;
+            for (size_t j = 0; j < PORT_BLOCK; j++)
+            {
+                if (g_peers[i].hasSeen[j] && g_peers[i].seen[j].sin_addr.s_addr == ip)
+                {
+                    if ((ntohs(g_peers[i].seen[j].sin_port) & ~uint16_t(PORT_BLOCK - 1)) == base)
+                        return i;
+                    sameIp = true;
+                }
+            }
+            if (sameIp)
+            {
+                match = i;
+                matches++;
+            }
+        }
+        // The only copy at that address, from a port no copy uses: a router changed it, or Windows chose it for a connection. (A port in the range
+        // is another copy on the same PC.)
+        bool ourPort = port >= BASE_PORT && port < BASE_PORT + PORT_BLOCK * MAX_INSTANCES;
+        if (matches == 1 && !ourPort && ip != htonl(INADDR_LOOPBACK))
+            return match;
+        return AddPeer(ip, base);
     }
 
-    static bool RealFromSecure(uint32_t secure, uint32_t& ip, uint16_t& base)
+    // A peer from its id, and the address it gave (or came from) for a new one. The caller holds g_peersMutex.
+    static size_t PeerIndexByTag(uint32_t tag, uint32_t ip, uint16_t base)
+    {
+        for (size_t i = 0; i < g_peers.size(); i++)
+        {
+            if (g_peers[i].hasTag && g_peers[i].tag == tag)
+                return i;
+        }
+        for (size_t i = 0; i < g_peers.size(); i++)
+        {
+            if (!g_peers[i].hasTag && g_peers[i].ip == ip && g_peers[i].base == base)
+            {
+                g_peers[i].tag = tag;
+                g_peers[i].hasTag = true;
+                return i;
+            }
+        }
+        size_t index = AddPeer(ip, base);
+        g_peers[index].tag = tag;
+        g_peers[index].hasTag = true;
+        return index;
+    }
+
+    static uint32_t PeerByReal(uint32_t ip, uint16_t port)
+    {
+        std::lock_guard lock(g_peersMutex);
+        return SecureAddress(PeerIndexByAddress(ip, port));
+    }
+
+    // Where to send to a title port of a peer: where its packets from that port came from if any did, otherwise its own address.
+    static bool RealFromSecure(uint32_t secure, uint16_t titlePort, sockaddr_in& address)
     {
         uint32_t value = ntohl(secure);
         if ((value & 0xFF000000) != 0x01000000)
@@ -129,8 +287,87 @@ namespace net
         size_t index = (value & 0xFFFFFF) - 1;
         if (index >= g_peers.size())
             return false;
-        ip = g_peers[index].ip;
-        base = g_peers[index].base;
+        const Peer& peer = g_peers[index];
+        uint16_t offset = titlePort & (PORT_BLOCK - 1);
+        if (peer.hasSeen[offset])
+        {
+            address = peer.seen[offset];
+            return true;
+        }
+        address.sin_addr.s_addr = peer.ip;
+        for (size_t j = 0; j < PORT_BLOCK; j++)
+        {
+            if (peer.hasSeen[j])
+            {
+                address.sin_addr.s_addr = peer.seen[j].sin_addr.s_addr;
+                break;
+            }
+        }
+        address.sin_port = htons(uint16_t(peer.base + offset));
+        return true;
+    }
+
+    // The header this runtime puts before each UDP packet the title sends: "ARN", version, the sender's id, the title port it was sent from (big endian), 0.
+    // Packets without one (from a build before it) still work as they did. AR_NO_NET_HEADER sends without it, for comparing.
+    static constexpr uint8_t PACKET_VERSION = 1;
+    static constexpr int HEADER_SIZE = 12;
+
+    static uint32_t LocalTag()
+    {
+        uint32_t tag;
+        memcpy(&tag, g_onlineId.data(), 4);
+        return tag;
+    }
+
+    static bool SendHeader()
+    {
+        static const bool off = AR_ENV("AR_NO_NET_HEADER") != nullptr;
+        return !off;
+    }
+
+    static void WriteHeader(uint8_t* header, uint16_t titlePort)
+    {
+        header[0] = 'A';
+        header[1] = 'R';
+        header[2] = 'N';
+        header[3] = PACKET_VERSION;
+        uint32_t tag = LocalTag();
+        memcpy(header + 4, &tag, 4);
+        header[8] = uint8_t(titlePort >> 8);
+        header[9] = uint8_t(titlePort);
+        header[10] = 0;
+        header[11] = 0;
+    }
+
+    // A received packet: if it has a header, who sent it (its secure address) and from which title port, and where it came from is remembered.
+    static bool ReadHeader(const uint8_t* data, int size, const sockaddr_in& from, uint32_t& secure, uint16_t& titlePort)
+    {
+        if (size < HEADER_SIZE || data[0] != 'A' || data[1] != 'R' || data[2] != 'N')
+            return false;
+        if (data[3] != PACKET_VERSION)
+        {
+            static std::once_flag warned;
+            std::call_once(warned, [&] { LOGF_WARNING("online: a copy is sending packets of version {}, this one is {}: every PC needs the same build", data[3], PACKET_VERSION); });
+        }
+        uint32_t tag;
+        memcpy(&tag, data + 4, 4);
+        titlePort = uint16_t((data[8] << 8) | data[9]);
+        uint16_t sourcePort = ntohs(from.sin_port);
+        uint16_t offset = titlePort != 0 ? (titlePort & (PORT_BLOCK - 1)) : (sourcePort & (PORT_BLOCK - 1));
+        std::lock_guard lock(g_peersMutex);
+        size_t index = PeerIndexByTag(tag, from.sin_addr.s_addr, uint16_t(sourcePort - offset));
+        Peer& peer = g_peers[index];
+        bool moved = !peer.hasSeen[offset] || peer.seen[offset].sin_addr.s_addr != from.sin_addr.s_addr || peer.seen[offset].sin_port != from.sin_port;
+        peer.seen[offset] = from;
+        peer.hasSeen[offset] = true;
+        if (moved && (from.sin_addr.s_addr != peer.ip || sourcePort != peer.base + offset))
+        {
+            const uint8_t* a = reinterpret_cast<const uint8_t*>(&from.sin_addr.s_addr);
+            const uint8_t* b = reinterpret_cast<const uint8_t*>(&peer.ip);
+            LOGF_INFO("online: copy {} gave {}.{}.{}.{} port {} but its port {} packets come from {}.{}.{}.{} port {}; answering there",
+                index + 1, b[0], b[1], b[2], b[3], peer.base + offset, offset, a[0], a[1], a[2], a[3], sourcePort);
+        }
+        secure = SecureAddress(index);
         return true;
     }
 
@@ -157,6 +394,7 @@ namespace net
     {
         SOCKET host = INVALID_SOCKET;
         bool datagram = false;
+        uint16_t titlePort = 0; // The port the title bound it to, 0 before that.
     };
     static std::mutex g_socketsMutex;
     static std::unordered_map<uint32_t, GuestSocket> g_sockets;
@@ -185,32 +423,33 @@ namespace net
         memcpy(&port, data + 2, 2);
         uint32_t ip;
         memcpy(&ip, data + 4, 4);
-        uint32_t realIp = ip;
-        uint16_t base = g_base;
-        if (!RealFromSecure(ip, realIp, base))
-            base = g_base;
-        address.sin_addr.s_addr = realIp;
-        address.sin_port = htons(ToHostPort(ntohs(port), base));
+        if (RealFromSecure(ip, ntohs(port), address))
+            return address;
+        address.sin_addr.s_addr = ip;
+        address.sin_port = htons(ToHostPort(ntohs(port), g_base));
         return address;
     }
 
-    static void WriteAddress(uint32_t guest, uint32_t guestLength, const sockaddr_in& address)
+    static void WriteGuestAddress(uint32_t guest, uint32_t guestLength, uint32_t secure, uint16_t titlePort)
     {
         if (guest == 0)
             return;
         uint8_t* data = g_memory.Translate<uint8_t>(guest);
         memset(data, 0, 16);
         *reinterpret_cast<be<uint16_t>*>(data) = uint16_t(AF_INET);
-        uint16_t hostPort = ntohs(address.sin_port);
-        uint16_t base = hostPort & ~uint16_t(PORT_BLOCK - 1);
-        uint16_t offset = hostPort & (PORT_BLOCK - 1);
-        uint16_t titlePort = g_titlePorts[offset] != 0 ? g_titlePorts[offset] : uint16_t(1000 + offset);
         uint16_t networkPort = htons(titlePort);
         memcpy(data + 2, &networkPort, 2);
-        uint32_t secure = PeerByReal(address.sin_addr.s_addr, base);
         memcpy(data + 4, &secure, 4);
         if (guestLength != 0)
             *g_memory.Translate<be<uint32_t>>(guestLength) = 16;
+    }
+
+    // An address the title is told about with no header to go by: its title port from the port's place in the block.
+    static void WriteAddress(uint32_t guest, uint32_t guestLength, const sockaddr_in& address)
+    {
+        uint16_t offset = ntohs(address.sin_port) & (PORT_BLOCK - 1);
+        uint16_t titlePort = g_titlePorts[offset] != 0 ? g_titlePorts[offset] : uint16_t(1000 + offset);
+        WriteGuestAddress(guest, guestLength, PeerByReal(address.sin_addr.s_addr, ntohs(address.sin_port)), titlePort);
     }
 }
 
@@ -409,6 +648,8 @@ namespace imports
             return FailFromHost();
         if (!datagram)
             NoDelay(host);
+        else if (!AR_ENV("AR_NET_UDP_RESETS"))
+            net::IgnoreUnreachable(uint64_t(host));
         std::lock_guard lock(net::g_socketsMutex);
         uint32_t handle = net::g_nextSocket++;
         net::g_sockets[handle] = { host, datagram };
@@ -489,6 +730,9 @@ namespace imports
         LOGF_INFO("online: bind socket {} title port {} to {}", socket, titlePort, base + offset);
         if (::bind(guest.host, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0)
             return FailFromHost();
+        std::lock_guard lock(net::g_socketsMutex);
+        if (auto it = net::g_sockets.find(socket); it != net::g_sockets.end())
+            it->second.titlePort = titlePort;
         return 0;
     }
 
@@ -593,11 +837,44 @@ namespace imports
         return result;
     }
 
+    // A UDP packet as it goes out: the title's bytes after this runtime's header (see net::WriteHeader), unless that's turned off.
+    static const char* WithHeader(const net::GuestSocket& guest, uint32_t buffer, uint32_t length, int& size)
+    {
+        size = int(length);
+        if (!guest.datagram || !net::SendHeader())
+            return g_memory.Translate<const char>(buffer);
+        thread_local std::vector<char> packet;
+        packet.resize(size_t(length) + net::HEADER_SIZE);
+        net::WriteHeader(reinterpret_cast<uint8_t*>(packet.data()), guest.titlePort);
+        memcpy(packet.data() + net::HEADER_SIZE, g_memory.Translate<const char>(buffer), length);
+        size = int(packet.size());
+        return packet.data();
+    }
+
+    // What the title is told was sent: its own bytes, not the header.
+    static int32_t SentLength(int result, int size, uint32_t length)
+    {
+        return result == size ? int32_t(length) : std::max(0, result - (size - int(length)));
+    }
+
     int32_t NetDll_recv(uint32_t caller, uint32_t socket, uint32_t buffer, uint32_t length, uint32_t flags)
     {
         auto guest = net::FindSocket(socket);
         if (guest.host == INVALID_SOCKET)
             return Fail();
+        if (guest.datagram)
+        {
+            thread_local std::vector<char> packet;
+            packet.resize(size_t(length) + net::HEADER_SIZE);
+            int got = ::recv(guest.host, packet.data(), int(packet.size()), int(flags));
+            if (got == SOCKET_ERROR)
+                return FailFromHost();
+            int skip = got >= net::HEADER_SIZE && memcmp(packet.data(), "ARN", 3) == 0 ? net::HEADER_SIZE : 0;
+            int result = std::min(got - skip, int(length));
+            memcpy(g_memory.Translate<char>(buffer), packet.data() + skip, size_t(result));
+            CountTraffic(socket, false, result);
+            return result;
+        }
         int result = ::recv(guest.host, g_memory.Translate<char>(buffer), int(length), int(flags));
         if (result != SOCKET_ERROR)
         {
@@ -614,12 +891,43 @@ namespace imports
             return Fail();
         sockaddr_in address{};
         int size = sizeof(address);
-        int result = ::recvfrom(guest.host, g_memory.Translate<char>(buffer), int(length), int(flags), reinterpret_cast<sockaddr*>(&address), &size);
-        if (result == SOCKET_ERROR)
+        if (!guest.datagram)
+        {
+            int result = ::recvfrom(guest.host, g_memory.Translate<char>(buffer), int(length), int(flags), reinterpret_cast<sockaddr*>(&address), &size);
+            if (result == SOCKET_ERROR)
+                return FailFromHost();
+            CountTraffic(socket, false, result);
+            net::WriteAddress(from, fromLength, address);
+            return result;
+        }
+        thread_local std::vector<char> packet;
+        packet.resize(size_t(length) + net::HEADER_SIZE);
+        int got = ::recvfrom(guest.host, packet.data(), int(packet.size()), int(flags), reinterpret_cast<sockaddr*>(&address), &size);
+        if (got == SOCKET_ERROR)
             return FailFromHost();
+        uint32_t secure;
+        uint16_t titlePort;
+        int skip = 0;
+        if (net::ReadHeader(reinterpret_cast<const uint8_t*>(packet.data()), got, address, secure, titlePort))
+        {
+            skip = net::HEADER_SIZE;
+            if (titlePort == 0)
+            {
+                uint16_t offset = ntohs(address.sin_port) & (net::PORT_BLOCK - 1);
+                titlePort = net::g_titlePorts[offset] != 0 ? net::g_titlePorts[offset] : uint16_t(1000 + offset);
+            }
+            net::WriteGuestAddress(from, fromLength, secure, titlePort);
+        }
+        else
+        {
+            static std::once_flag noted;
+            std::call_once(noted, [] { LOGF_INFO("online: a packet without this runtime's header (an older build, or AR_NO_NET_HEADER)"); });
+            net::WriteAddress(from, fromLength, address);
+        }
+        int result = std::min(got - skip, int(length));
+        memcpy(g_memory.Translate<char>(buffer), packet.data() + skip, size_t(result));
         CountTraffic(socket, false, result);
         Trace("recvfrom socket {} from port {} {} bytes {}", socket, ntohs(address.sin_port), result, Bytes(g_memory.Translate<char>(buffer), result));
-        net::WriteAddress(from, fromLength, address);
         return result;
     }
 
@@ -628,12 +936,14 @@ namespace imports
         auto guest = net::FindSocket(socket);
         if (guest.host == INVALID_SOCKET)
             return Fail();
-        if (SendDelayed(guest.host, false, nullptr, g_memory.Translate<const char>(buffer), int(length)))
+        int size;
+        const char* data = WithHeader(guest, buffer, length, size);
+        if (SendDelayed(guest.host, false, nullptr, data, size))
             return int32_t(length);
-        int result = ::send(guest.host, g_memory.Translate<const char>(buffer), int(length), int(flags));
+        int result = ::send(guest.host, data, size, int(flags));
         CountTraffic(socket, true, result);
         Trace("send socket {} {} of {} bytes {}", socket, result, length, Bytes(g_memory.Translate<char>(buffer), int(length)));
-        return result == SOCKET_ERROR ? FailFromHost() : result;
+        return result == SOCKET_ERROR ? FailFromHost() : SentLength(result, size, length);
     }
 
     int32_t NetDll_sendto(uint32_t caller, uint32_t socket, uint32_t buffer, uint32_t length, uint32_t flags, uint32_t to, uint32_t toLength)
@@ -642,13 +952,15 @@ namespace imports
         if (guest.host == INVALID_SOCKET)
             return Fail();
         sockaddr_in address = net::ReadAddress(to);
-        if (SendDelayed(guest.host, true, &address, g_memory.Translate<const char>(buffer), int(length)))
+        int size;
+        const char* data = WithHeader(guest, buffer, length, size);
+        if (SendDelayed(guest.host, guest.datagram, &address, data, size))
             return int32_t(length);
-        int result = ::sendto(guest.host, g_memory.Translate<const char>(buffer), int(length), int(flags), reinterpret_cast<sockaddr*>(&address), sizeof(address));
+        int result = ::sendto(guest.host, data, size, int(flags), reinterpret_cast<sockaddr*>(&address), sizeof(address));
         CountTraffic(socket, true, result);
         const uint8_t* toBytes = g_memory.Translate<const uint8_t>(to);
         Trace("sendto socket {} guest {}.{}.{}.{} port {} {} of {} bytes {}", socket, toBytes[4], toBytes[5], toBytes[6], toBytes[7], ntohs(address.sin_port), result, length, Bytes(g_memory.Translate<char>(buffer), int(length)));
-        return result == SOCKET_ERROR ? FailFromHost() : result;
+        return result == SOCKET_ERROR ? FailFromHost() : SentLength(result, size, length);
     }
 
     uint32_t NetDll___WSAFDIsSet(uint32_t socket, uint32_t set)
@@ -680,16 +992,18 @@ namespace imports
         if (!net::Online())
             return X_WSAEINVAL;
         const uint8_t* address = g_memory.Translate<const uint8_t>(xnaddr);
-        uint32_t ip;
+        uint32_t ip, tag;
         uint16_t port;
         memcpy(&ip, address, 4);
         memcpy(&port, address + 8, 2);
-        uint32_t secure = net::PeerByReal(ip, ntohs(port));
+        memcpy(&tag, address + 16, 4); // The online id's start, which is also in that copy's packets.
+        uint32_t secure;
         {
             std::lock_guard lock(net::g_peersMutex);
-            size_t index = (ntohl(secure) & 0xFFFFFF) - 1;
+            size_t index = tag != 0 ? net::PeerIndexByTag(tag, ip, ntohs(port)) : net::PeerIndexByAddress(ip, ntohs(port));
             memcpy(net::g_peers[index].xnaddr, address, 36);
             net::g_peers[index].hasAddress = true;
+            secure = net::SecureAddress(index);
         }
         memcpy(g_memory.Translate<uint8_t>(inaddr), &secure, 4);
         return 0;

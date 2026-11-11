@@ -160,7 +160,12 @@ namespace net
         SOCKET s = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         BOOL on = TRUE;
         ::setsockopt(s, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&on), sizeof(on));
+        IgnoreUnreachable(uint64_t(s));
+        // This PC, every network it's on (255.255.255.255 alone goes out of one adapter, which with a VPN or a virtual adapter may be the wrong one),
+        // and the addresses or names given.
         std::vector<uint32_t> addresses = { htonl(INADDR_LOOPBACK), htonl(INADDR_BROADCAST) };
+        for (uint32_t broadcast : BroadcastAddresses())
+            addresses.push_back(broadcast);
         if (const char* text = AR_ENV("AR_ONLINE_PEER"))
         {
             std::string list = text;
@@ -168,9 +173,14 @@ namespace net
             while (start <= list.size())
             {
                 size_t end = std::min(list.find(',', start), list.size());
+                std::string item = list.substr(start, end - start);
+                item.erase(0, item.find_first_not_of(" \t"));
+                item.erase(item.find_last_not_of(" \t") + 1);
                 uint32_t address;
-                if (inet_pton(AF_INET, list.substr(start, end - start).c_str(), &address) == 1)
+                if (!item.empty() && ResolveAddress(item, address))
                     addresses.push_back(address);
+                else if (!item.empty())
+                    LOGF_WARNING("online: the host \"{}\" can't be found", item);
                 start = end + 1;
             }
         }

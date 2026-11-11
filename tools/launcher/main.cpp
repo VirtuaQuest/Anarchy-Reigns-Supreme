@@ -7,6 +7,7 @@
 #include <commctrl.h>
 #include <commdlg.h>
 #include <shellapi.h>
+#include <netfw.h>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -147,6 +148,123 @@ namespace
             SetWindowTextW(g_gamePath, ToRelative(path).c_str());
     }
 
+    // Whether Windows Firewall lets other PCs reach the game: an enabled incoming rule for its exe that allows it in the network profile in use, and none
+    // that blocks it (Windows adds a blocking one when its own question about the game is cancelled). Not knowing counts as allowed, so nobody is asked
+    // for nothing.
+    enum class Firewall
+    {
+        Allowed,
+        NotAllowed,
+        Blocked,
+    };
+
+    Firewall CheckFirewall(const std::wstring& exe)
+    {
+        HRESULT initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        Firewall state = Firewall::Allowed;
+        INetFwPolicy2* policy = nullptr;
+        if (SUCCEEDED(CoCreateInstance(__uuidof(NetFwPolicy2), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&policy))))
+        {
+            long profiles = 0;
+            policy->get_CurrentProfileTypes(&profiles);
+            bool enabled = false;
+            for (long profile : { long(NET_FW_PROFILE2_DOMAIN), long(NET_FW_PROFILE2_PRIVATE), long(NET_FW_PROFILE2_PUBLIC) })
+            {
+                VARIANT_BOOL on = VARIANT_FALSE;
+                if ((profiles & profile) && SUCCEEDED(policy->get_FirewallEnabled(NET_FW_PROFILE_TYPE2(profile), &on)) && on)
+                    enabled = true;
+            }
+            INetFwRules* rules = nullptr;
+            IUnknown* list = nullptr;
+            IEnumVARIANT* items = nullptr;
+            if (enabled && SUCCEEDED(policy->get_Rules(&rules)) && SUCCEEDED(rules->get__NewEnum(&list)) && SUCCEEDED(list->QueryInterface(IID_PPV_ARGS(&items))))
+            {
+                bool allowed = false, blocked = false;
+                VARIANT item;
+                VariantInit(&item);
+                ULONG fetched = 0;
+                while (items->Next(1, &item, &fetched) == S_OK)
+                {
+                    INetFwRule* rule = nullptr;
+                    if (item.vt == VT_DISPATCH && item.pdispVal != nullptr && SUCCEEDED(item.pdispVal->QueryInterface(IID_PPV_ARGS(&rule))))
+                    {
+                        BSTR application = nullptr;
+                        NET_FW_RULE_DIRECTION direction = NET_FW_RULE_DIR_OUT;
+                        VARIANT_BOOL on = VARIANT_FALSE;
+                        long ruleProfiles = 0;
+                        NET_FW_ACTION action = NET_FW_ACTION_ALLOW;
+                        if (SUCCEEDED(rule->get_ApplicationName(&application)) && application != nullptr && _wcsicmp(application, exe.c_str()) == 0 &&
+                            SUCCEEDED(rule->get_Direction(&direction)) && direction == NET_FW_RULE_DIR_IN && SUCCEEDED(rule->get_Enabled(&on)) && on &&
+                            SUCCEEDED(rule->get_Profiles(&ruleProfiles)) && (ruleProfiles & profiles) != 0 && SUCCEEDED(rule->get_Action(&action)))
+                            (action == NET_FW_ACTION_BLOCK ? blocked : allowed) = true;
+                        SysFreeString(application);
+                        rule->Release();
+                    }
+                    VariantClear(&item);
+                }
+                state = blocked ? Firewall::Blocked : allowed ? Firewall::Allowed : Firewall::NotAllowed;
+            }
+            if (items)
+                items->Release();
+            if (list)
+                list->Release();
+            if (rules)
+                rules->Release();
+            policy->Release();
+        }
+        if (SUCCEEDED(initialized))
+            CoUninitialize();
+        return state;
+    }
+
+    // Lets the game through Windows Firewall, with the permission Windows asks for: rules blocking it go, and rules allowing its ports come in.
+    bool AllowThroughFirewall(HWND window, const std::wstring& exe)
+    {
+        std::wstring program = L"program=\"" + exe + L"\"";
+        std::wstring name = L"name=\"Anarchy Reigns Recompiled (multiplayer)\"";
+        std::wstring commands = L"/s /c \"netsh advfirewall firewall delete rule name=all dir=in " + program +
+            L" & netsh advfirewall firewall add rule " + name + L" dir=in action=allow protocol=UDP localport=36000-36127 profile=any " + program +
+            L" & netsh advfirewall firewall add rule " + name + L" dir=in action=allow protocol=TCP localport=36000-36127 profile=any " + program + L"\"";
+        SHELLEXECUTEINFOW run{ sizeof(run) };
+        run.fMask = SEE_MASK_NOCLOSEPROCESS;
+        run.hwnd = window;
+        run.lpVerb = L"runas";
+        run.lpFile = L"cmd.exe";
+        run.lpParameters = commands.c_str();
+        run.nShow = SW_HIDE;
+        if (!ShellExecuteExW(&run) || run.hProcess == nullptr)
+            return false;
+        WaitForSingleObject(run.hProcess, 30000);
+        CloseHandle(run.hProcess);
+        return CheckFirewall(exe) == Firewall::Allowed;
+    }
+
+    // Before a multiplayer game: whether the firewall will let others in, and if not, an offer to fix it. False if the player would rather not start yet.
+    bool OfferFirewall(HWND window, const std::wstring& exe)
+    {
+        if (_wcsicmp(ReadSetting(L"FirewallDeclined", L"").c_str(), exe.c_str()) == 0)
+            return true;
+        Firewall state = CheckFirewall(exe);
+        if (state == Firewall::Allowed)
+            return true;
+        std::wstring text = state == Firewall::Blocked ?
+            L"Windows Firewall is blocking the game, so other PCs can't find or join a game hosted here, or reach you in a match.\n\n" :
+            L"Windows Firewall hasn't been told to let the game in, so other PCs may not be able to find or join a game hosted here, or reach you in a match.\n\n";
+        text += L"Let it through now? Windows asks for permission. This adds incoming rules for ARRecomp.exe on its ports (36000 to 36127), and removes "
+            L"rules that block it.\n\nNo starts the game as it is, and this won't be asked again.";
+        int answer = MessageBoxW(window, text.c_str(), L"Anarchy Reigns: multiplayer", MB_YESNOCANCEL | MB_ICONQUESTION);
+        if (answer == IDCANCEL)
+            return false;
+        if (answer == IDNO)
+        {
+            WriteSetting(L"FirewallDeclined", exe);
+            return true;
+        }
+        if (!AllowThroughFirewall(window, exe))
+            MessageBoxW(window, L"The firewall wasn't changed, so other PCs may not reach this one. The game starts anyway.", L"Anarchy Reigns: multiplayer", MB_ICONWARNING);
+        return true;
+    }
+
     void Launch(HWND window)
     {
         int resolution = int(SendMessageW(g_resolution, CB_GETCURSEL, 0, 0));
@@ -213,6 +331,9 @@ namespace
             if (!playerName.empty())
                 command += L" --player-name \"" + playerName + L"\"";
         }
+
+        if (online == 1 && !OfferFirewall(window, exe))
+            return;
 
         std::wstring workingFolder = WorkingFolder();
         if (workingFolder != g_folder) // Otherwise the setting is left alone: it may be a drive that's only away for now.
