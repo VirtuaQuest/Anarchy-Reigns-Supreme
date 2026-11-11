@@ -1,5 +1,5 @@
-// Launcher: a window to choose display options, which then starts ARRecomp.exe with them. The choices (and the
-// game image path) are kept in launcher.ini next to the launcher, with paths relative to it.
+// Launcher: a window to choose display options, which then starts ARRecomp.exe with them (or with --play, starts it straight away). The choices (and
+// the game image path) are kept in launcher.ini next to the launcher, with paths relative to it.
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
@@ -8,6 +8,7 @@
 #include <commdlg.h>
 #include <shellapi.h>
 #include <netfw.h>
+#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -83,6 +84,15 @@ namespace
     std::wstring g_folder, g_iniPath;
     // A game given with --game (as RecompLauncher passes the player's copy): it takes the place of the one in launcher.ini.
     std::wstring g_gameArgument;
+    // --play: start the game with the saved choices, with no window unless it can't. Also in RecompLauncher's Big Picture mode, made for a controller.
+    bool g_play;
+
+    std::wstring GetEnv(const wchar_t* name)
+    {
+        wchar_t value[256];
+        DWORD size = GetEnvironmentVariableW(name, value, DWORD(std::size(value)));
+        return size > 0 && size < std::size(value) ? value : L"";
+    }
 
     std::wstring ReadSetting(const wchar_t* key, const wchar_t* fallback)
     {
@@ -265,6 +275,34 @@ namespace
         return true;
     }
 
+    // Started by RecompLauncher, the game's messages go to a file it can send with a crash report, in place of a console window: logs\ARRecomp-<date and
+    // time>.log in the folder it runs in, the newest 5 kept. Null if the file can't be made, and then the game starts as it would without.
+    HANDLE OpenGameLog(const std::wstring& workingFolder)
+    {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        fs::path folder = fs::path(workingFolder) / L"logs";
+        fs::create_directories(folder, ec);
+        std::vector<fs::path> old;
+        for (const auto& entry : fs::directory_iterator(folder, ec))
+        {
+            std::wstring name = entry.path().filename().wstring();
+            if (name.rfind(L"ARRecomp-", 0) == 0 && entry.path().extension() == L".log")
+                old.push_back(entry.path());
+        }
+        std::sort(old.begin(), old.end());
+        for (size_t i = 0; i + 4 < old.size(); i++)
+            fs::remove(old[i], ec);
+
+        SYSTEMTIME now;
+        GetLocalTime(&now);
+        wchar_t name[64];
+        swprintf_s(name, L"ARRecomp-%04u-%02u-%02u_%02u-%02u-%02u.log", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond);
+        SECURITY_ATTRIBUTES inherit{ sizeof(inherit), nullptr, TRUE };
+        HANDLE log = CreateFileW((folder / name).c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_DELETE, &inherit, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        return log == INVALID_HANDLE_VALUE ? nullptr : log;
+    }
+
     void Launch(HWND window)
     {
         int resolution = int(SendMessageW(g_resolution, CB_GETCURSEL, 0, 0));
@@ -341,7 +379,18 @@ namespace
 
         STARTUPINFOW startup{ sizeof(startup) };
         PROCESS_INFORMATION process{};
-        if (!CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, FALSE, 0, nullptr, workingFolder.c_str(), &startup, &process))
+        HANDLE log = GetEnv(L"RECOMPLAUNCHER") == L"1" ? OpenGameLog(workingFolder) : nullptr;
+        if (log != nullptr)
+        {
+            startup.dwFlags = STARTF_USESTDHANDLES;
+            startup.hStdOutput = log;
+            startup.hStdError = log;
+        }
+        BOOL started = CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, log != nullptr, log != nullptr ? CREATE_NO_WINDOW : 0, nullptr,
+            workingFolder.c_str(), &startup, &process);
+        if (log != nullptr)
+            CloseHandle(log);
+        if (!started)
         {
             MessageBoxW(window, (L"Could not start " + exe).c_str(), L"Anarchy Reigns", MB_ICONERROR);
             return;
@@ -461,8 +510,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
             if (wcscmp(arguments[i], L"--game") == 0 && GetFileAttributesW(arguments[i + 1]) != INVALID_FILE_ATTRIBUTES)
                 g_gameArgument = std::filesystem::absolute(arguments[i + 1]).lexically_normal().wstring();
         }
+        for (int i = 1; i < count; i++)
+            g_play |= wcscmp(arguments[i], L"--play") == 0;
         LocalFree(arguments);
     }
+    g_play |= GetEnv(L"RECOMPLAUNCHER_MODE") == L"bigpicture";
 
     INITCOMMONCONTROLSEX controls{ sizeof(controls), ICC_STANDARD_CLASSES };
     InitCommonControlsEx(&controls);
@@ -493,7 +545,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
     AdjustWindowRect(&rect, style, FALSE);
     HWND window = CreateWindowExW(0, windowClass.lpszClassName, L"Anarchy Reigns Launcher", style, CW_USEDEFAULT, CW_USEDEFAULT,
         rect.right - rect.left, rect.bottom - rect.top, nullptr, nullptr, instance, nullptr);
-    ShowWindow(window, show);
+    // With --play the window goes once the game starts, so it's only seen if the game can't start, to put that right.
+    if (g_play)
+        Launch(window);
+    if (IsWindow(window))
+        ShowWindow(window, show);
 
     MSG message;
     while (GetMessageW(&message, nullptr, 0, 0) > 0)

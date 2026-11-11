@@ -288,18 +288,34 @@ namespace
         return tools;
     }
 
+    struct ToolCheck
+    {
+        bool good;
+        const wchar_t* name;
+        const wchar_t* missing;
+    };
+
+    std::vector<ToolCheck> ToolChecks()
+    {
+        return {
+            { !g_tools.vcvars.empty(), L"Visual Studio C++ tools", L"install Build Tools" },
+            { g_tools.sdk, L"Windows SDK", L"add it in that installer" },
+            { !g_tools.clang.empty(), L"LLVM clang-cl", L"install LLVM" },
+            { !g_tools.cmake.empty() && !g_tools.ninja.empty(), L"CMake and Ninja", L"add CMake in VS installer" },
+            { !g_tools.xenonRecomp.empty(), L"XenonRecomp", L"missing, download this project again" },
+            { g_tools.disk, L"5 GB of disk space", L"not enough free" },
+        };
+    }
+
     void ShowTools()
     {
-        auto show = [](int i, bool good, const std::wstring& name, const std::wstring& missing)
-            {
-                g_form.SetLabel(g_toolLabels[i], (good ? L"✓  " : L"✗  ") + (good ? name : name + L": " + missing), good ? theme::GREEN : theme::BAD);
-            };
-        show(0, !g_tools.vcvars.empty(), L"Visual Studio C++ tools", L"install Build Tools");
-        show(1, g_tools.sdk, L"Windows SDK", L"add it in that installer");
-        show(2, !g_tools.clang.empty(), L"LLVM clang-cl", L"install LLVM");
-        show(3, !g_tools.cmake.empty() && !g_tools.ninja.empty(), L"CMake and Ninja", L"add CMake in VS installer");
-        show(4, !g_tools.xenonRecomp.empty(), L"XenonRecomp", L"missing, download this project again");
-        show(5, g_tools.disk, L"5 GB of disk space", L"not enough free");
+        std::vector<ToolCheck> checks = ToolChecks();
+        for (size_t i = 0; i < checks.size(); i++)
+        {
+            const ToolCheck& tool = checks[i];
+            g_form.SetLabel(g_toolLabels[i], (tool.good ? L"✓  " : L"✗  ") + (tool.good ? std::wstring(tool.name) : std::wstring(tool.name) + L": " + tool.missing),
+                tool.good ? theme::GREEN : theme::BAD);
+        }
     }
 
     // ---- The player's files ----
@@ -314,6 +330,21 @@ namespace
 
     void RefreshBuildButton();
 
+    // Whether a copy of the game is the version this project was made for, and what to tell the player about it.
+    Check CheckGameFile(const fs::path& path, std::wstring& message)
+    {
+        std::vector<uint8_t> xex;
+        if (!package::ReadGameFile(path, "default.xex", xex, message))
+            return Check::Bad;
+        if (package::Sha1(xex.data(), xex.size()) == KNOWN_EXECUTABLE_SHA1)
+        {
+            message = L"Recognised: the version this project was made for.";
+            return Check::Good;
+        }
+        message = L"A different version from the one this project was made for. It may not work.";
+        return Check::Warning;
+    }
+
     void CheckGame()
     {
         std::wstring path = GetText(g_game);
@@ -324,20 +355,12 @@ namespace
         }
         else
         {
-            std::vector<uint8_t> xex;
-            std::wstring error;
-            if (!package::ReadGameFile(path, "default.xex", xex, error))
-                g_form.SetLabel(g_gameStatus, error, theme::BAD);
-            else if (package::Sha1(xex.data(), xex.size()) == KNOWN_EXECUTABLE_SHA1)
-            {
-                g_gameCheck = Check::Good;
-                g_form.SetLabel(g_gameStatus, L"✓  Recognised: the version this project was made for.", theme::GREEN);
-            }
+            std::wstring message;
+            g_gameCheck = CheckGameFile(path, message);
+            if (g_gameCheck == Check::Good)
+                g_form.SetLabel(g_gameStatus, L"✓  " + message, theme::GREEN);
             else
-            {
-                g_gameCheck = Check::Warning;
-                g_form.SetLabel(g_gameStatus, L"A different version from the one this project was made for. It may not work.", theme::WARNING);
-            }
+                g_form.SetLabel(g_gameStatus, message, g_gameCheck == Check::Bad ? theme::BAD : theme::WARNING);
         }
         RefreshBuildButton();
     }
@@ -706,47 +729,50 @@ namespace
         return true;
     }
 
-    void StartBuild()
+    // What was chosen is remembered, and the log starts again.
+    void BeginBuild(const Choices& choices)
     {
-        std::wstring gamePath = GetText(g_game);
-
-        if (g_gameCheck == Check::Warning && MessageBoxW(g_window,
-            L"This isn't the version of the game this project was made for.\n\nThe fixes in this project are tied to exact places in the game's code, so it may crash or misbehave. Build it anyway?",
-            L"Setup", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
-            return;
-        // What was chosen is remembered.
         fs::path settings = g_setupFolder / L"setup.ini";
         std::error_code ec;
         fs::create_directories(g_setupFolder, ec);
-        WritePrivateProfileStringW(L"Setup", L"Game", gamePath.c_str(), settings.c_str());
-        WritePrivateProfileStringW(L"Setup", L"Dlc", GetText(g_dlc).c_str(), settings.c_str());
+        WritePrivateProfileStringW(L"Setup", L"Game", choices.game.c_str(), settings.c_str());
+        WritePrivateProfileStringW(L"Setup", L"Dlc", choices.dlc.c_str(), settings.c_str());
 
         {
             std::lock_guard lock(g_logMutex);
             g_logFile.close();
             g_logFile.open(g_logPath, std::ios::binary | std::ios::trunc);
         }
-        SetWindowTextW(g_log, L"");
-        g_building = true;
-        g_cancel = false;
-        g_finished = false;
-        g_succeeded = false;
-        g_started = std::chrono::steady_clock::now();
-        SetWindowTextW(g_build, L"Cancel");
-        InvalidateRect(g_build, nullptr, FALSE);
-        EnableWindow(g_launcher, FALSE);
-        EnableWindow(g_game, FALSE);
-        EnableWindow(g_dlc, FALSE);
 
-        // Everything started goes when the job does: on Cancel, and if this window goes away.
+        // Everything started goes when the job does: on Cancel, and if this program goes away.
         if (g_job != nullptr)
             CloseHandle(g_job);
         g_job = CreateJobObjectW(nullptr, nullptr);
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         SetInformationJobObject(g_job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+        g_started = std::chrono::steady_clock::now();
+    }
 
-        Choices choices{ gamePath, GetText(g_dlc) };
+    void StartBuild()
+    {
+        if (g_gameCheck == Check::Warning && MessageBoxW(g_window,
+            L"This isn't the version of the game this project was made for.\n\nThe fixes in this project are tied to exact places in the game's code, so it may crash or misbehave. Build it anyway?",
+            L"Setup", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
+            return;
+        Choices choices{ GetText(g_game), GetText(g_dlc) };
+        BeginBuild(choices);
+        SetWindowTextW(g_log, L"");
+        g_building = true;
+        g_cancel = false;
+        g_finished = false;
+        g_succeeded = false;
+        SetWindowTextW(g_build, L"Cancel");
+        InvalidateRect(g_build, nullptr, FALSE);
+        EnableWindow(g_launcher, FALSE);
+        EnableWindow(g_game, FALSE);
+        EnableWindow(g_dlc, FALSE);
+
         g_worker = std::thread([choices]
             {
                 bool good = BuildAll(choices);
@@ -872,7 +898,7 @@ namespace
     }
 
     // What was chosen last time, or what's already known: the launcher's game, and a DLC folder where consoles keep it, by the game.
-    void LoadChoices()
+    Choices KnownChoices()
     {
         fs::path settings = g_setupFolder / L"setup.ini";
         std::wstring game = ReadSetting(settings, L"Setup", L"Game");
@@ -898,8 +924,124 @@ namespace
             if (Exists(guess))
                 dlc = guess.wstring();
         }
-        SetWindowTextW(g_game, game.c_str());
-        SetWindowTextW(g_dlc, dlc.c_str());
+        return { game, dlc };
+    }
+
+    void LoadChoices()
+    {
+        Choices known = KnownChoices();
+        SetWindowTextW(g_game, known.game.c_str());
+        SetWindowTextW(g_dlc, known.dlc.c_str());
+    }
+
+    // ---- With no window, for RecompLauncher ----
+
+    // Exit codes of --prepare.
+    enum PrepareResult
+    {
+        PREPARE_DONE = 0,
+        PREPARE_NO_TOOLS = 2,
+        PREPARE_NO_GAME = 3,
+        PREPARE_OTHER_VERSION = 4,
+        PREPARE_FAILED = 5,
+    };
+
+    void Print(const std::wstring& line)
+    {
+        static HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+        if (out == nullptr || out == INVALID_HANDLE_VALUE)
+            return;
+        std::string text = Narrow(line) + "\n";
+        DWORD written;
+        WriteFile(out, text.data(), DWORD(text.size()), &written, nullptr);
+    }
+
+    // RecompLauncher's setup step: "progress 0.42 What it's doing" lines, from 0 to 1, on the launcher's setup screen.
+    void PrintProgress(int progress, const std::wstring& text)
+    {
+        wchar_t number[16];
+        swprintf_s(number, L"%.3f", std::clamp(progress, 0, 1000) / 1000.0);
+        Print(L"progress " + std::wstring(number) + L" " + text);
+    }
+
+    // --prepare --game <path>: the Build button's build, with no window, for RecompLauncher's setup screen. The DLC is the one chosen in this
+    // window before, or the one next to the game where a console keeps it. Ends with 0 when the game is built, or a PrepareResult saying why not.
+    int Prepare()
+    {
+        std::error_code ec;
+        fs::create_directories(g_setupFolder, ec);
+        g_tools = FindTools();
+        if (!g_tools.Ready())
+        {
+            std::wstring missing;
+            for (const ToolCheck& tool : ToolChecks())
+            {
+                if (!tool.good)
+                    missing += (missing.empty() ? L"" : L"; ") + std::wstring(tool.name) + L": " + tool.missing;
+            }
+            PrintProgress(0, L"Missing what the build needs. " + missing);
+            return PREPARE_NO_TOOLS;
+        }
+        if (g_gameArgument.empty())
+        {
+            PrintProgress(0, L"Your game wasn't found. Choose your disc image or its folder again.");
+            return PREPARE_NO_GAME;
+        }
+        Choices choices = KnownChoices();
+        std::wstring message;
+        Check check = CheckGameFile(choices.game, message);
+        if (check != Check::Good)
+        {
+            PrintProgress(0, check == Check::Bad ? message : message + L" To build it anyway, run Setup.bat in the game's folder.");
+            return check == Check::Bad ? PREPARE_NO_GAME : PREPARE_OTHER_VERSION;
+        }
+
+        BeginBuild(choices);
+        std::atomic<bool> done{ false };
+        bool good = false;
+        std::thread worker([&]
+            {
+                good = BuildAll(choices);
+                done = true;
+            });
+        int shownProgress = -1;
+        std::wstring shownStep, lastLine;
+        for (bool finished = false; !finished; )
+        {
+            finished = done;
+            std::wstring step, remaining;
+            int progress;
+            std::deque<std::wstring> lines;
+            {
+                std::lock_guard lock(g_shared.mutex);
+                step = g_shared.step;
+                remaining = g_shared.remaining;
+                progress = g_shared.progress;
+                lines.swap(g_shared.lines);
+            }
+            for (const std::wstring& line : lines)
+            {
+                Print(line);
+                lastLine = line;
+            }
+            std::wstring text = remaining.empty() ? step : step + L", " + remaining;
+            if (!text.empty() && (progress != shownProgress || text != shownStep))
+            {
+                PrintProgress(progress, text);
+                shownProgress = progress;
+                shownStep = text;
+            }
+            if (!finished)
+                Sleep(250);
+        }
+        worker.join();
+        if (!good)
+        {
+            PrintProgress(shownProgress, lastLine.empty() ? L"The build didn't work. The log is in out\\setup\\setup.log." : lastLine);
+            return PREPARE_FAILED;
+        }
+        PrintProgress(1000, L"Built");
+        return PREPARE_DONE;
     }
 
     LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
@@ -1049,9 +1191,26 @@ namespace
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 {
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    bool prepare = false;
+    int count = 0;
+    if (wchar_t** arguments = CommandLineToArgvW(GetCommandLineW(), &count))
+    {
+        for (int i = 1; i < count; i++)
+        {
+            if (wcscmp(arguments[i], L"--game") == 0 && i + 1 < count && Exists(arguments[i + 1]))
+                g_gameArgument = fs::absolute(arguments[i + 1]).lexically_normal();
+            else if (wcscmp(arguments[i], L"--prepare") == 0)
+                prepare = true;
+        }
+        LocalFree(arguments);
+    }
+
     if (!FindRoot())
     {
-        MessageBoxW(nullptr, L"Setup has to run from inside the project's folder. Use Setup.bat there.", L"Setup", MB_ICONERROR);
+        if (prepare)
+            PrintProgress(0, L"Setup has to run from inside the project's folder.");
+        else
+            MessageBoxW(nullptr, L"Setup has to run from inside the project's folder. Use Setup.bat there.", L"Setup", MB_ICONERROR);
         return 1;
     }
     g_outFolder = g_root / L"out";
@@ -1060,16 +1219,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
     g_runFolder = g_root / L"run";
     g_logPath = g_setupFolder / L"setup.log";
 
-    int count = 0;
-    if (wchar_t** arguments = CommandLineToArgvW(GetCommandLineW(), &count))
-    {
-        for (int i = 1; i + 1 < count; i++)
-        {
-            if (wcscmp(arguments[i], L"--game") == 0 && Exists(arguments[i + 1]))
-                g_gameArgument = fs::absolute(arguments[i + 1]).lexically_normal();
-        }
-        LocalFree(arguments);
-    }
+    if (prepare)
+        return Prepare();
 
     INITCOMMONCONTROLSEX controls{ sizeof(controls), ICC_STANDARD_CLASSES };
     InitCommonControlsEx(&controls);
