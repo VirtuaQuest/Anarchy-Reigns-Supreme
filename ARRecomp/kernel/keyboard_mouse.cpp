@@ -738,7 +738,7 @@ namespace kbm
         }
     }
 
-    static void GetKeyboardPage(std::vector<gpu::d3d12::OverlayQuad>& quads)
+    static void GetKeyboardPage(std::vector<gpu::d3d12::OverlayQuad>& quads, bool interactive = true)
     {
         static constexpr float ERASE[4] = { 0.0f, 0.03f, 0.0f, 1.0f }, BRIGHT[4] = { 0.70f, 1.0f, 0.2f, 1.0f },
             LABEL[4] = { 0.70f, 1.0f, 0.2f, 0.75f }, ON_SELECTED[4] = { 0.02f, 0.05f, 0.0f, 1.0f };
@@ -762,8 +762,8 @@ namespace kbm
             quads.push_back({ x0, y0, x1 - x0, y1 - y0, -7, { BRIGHT[0], BRIGHT[1], BRIGHT[2], BRIGHT[3] }, { x0, y0, x1, y1 } });
         }
 
-        int selectedColumn = g_pageColumn, selectedRow = g_pageRow;
-        bool waiting = g_pageWaitingForKey;
+        int selectedColumn = interactive ? int(g_pageColumn) : -1, selectedRow = interactive ? int(g_pageRow) : -1;
+        bool waiting = interactive && g_pageWaitingForKey;
         for (int column = 0; column < PAGE_COLUMNS; column++)
         {
             for (int row = 0; row < PAGE_ROWS; row++)
@@ -812,6 +812,17 @@ namespace kbm
         if (page == 2)
         {
             GetKeyboardPage(quads);
+            return;
+        }
+        // The loading screen: the keyboard page instead of the title's diagram, to read only, so it always shows the keys as they are now (AR_LOADING_DIAGRAM keeps the diagram).
+        static const bool loadingPage = !AR_ENV("AR_LOADING_DIAGRAM");
+        if (page == 0 && loadingPage && Active() && gpu::d3d12::LoadingDiagramShowing())
+        {
+            GetKeyboardPage(quads, false);
+            // Nothing can be changed here, so not the page's legend: what's going on instead.
+            static constexpr float ERASE[4] = { 0.0f, 0.03f, 0.0f, 1.0f };
+            quads.push_back({ 0.0f, 682.0f, 1280.0f, 38.0f, -1, { ERASE[0], ERASE[1], ERASE[2], ERASE[3] } });
+            AddPageText(quads, 640.0f + 28.0f, 688.0f, "Loading...", 1, BRIGHT, true);
             return;
         }
         if (page != 0)

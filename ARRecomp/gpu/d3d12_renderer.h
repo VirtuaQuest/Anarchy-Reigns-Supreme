@@ -52,6 +52,7 @@ namespace gpu::d3d12
     bool GameFontsAvailable();
     bool GameIconsAvailable();
     bool TitleFontsAvailable(); // The stencil letters for the title screen's words.
+    bool LoadingDiagramShowing(); // The title is drawing its controller diagram, which only the loading screen has.
 
     // Saves the next presented frame to screenshots/<name>.bmp (debugging remote control, AR_REMOTE).
     void RequestScreenshot(const std::string& name);

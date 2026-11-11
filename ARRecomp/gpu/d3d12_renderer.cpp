@@ -2457,6 +2457,8 @@ float4 main(float4 position : SV_Position) : SV_Target
     // shows (with the controller's art, whatever is in use) and kept in the user's folder. Nothing of it is in this project.
     static const char* CONTROLLER_DIAGRAM_FILE = "user/controller_diagram.bmp";
 
+    static uint64_t g_diagramSeenFrame = UINT64_MAX;
+
     static constexpr uint64_t GAME_ICONS_HASH = 0x1AEBE5D5E582F6BAull, GAME_STENCIL_HASH = 0xE242DB80AEB462ADull;
 
     // The title's fonts for the Options screen, for the rows added to it (see kbm::GetOverlay): recognised by their contents.
@@ -2466,6 +2468,11 @@ float4 main(float4 position : SV_Position) : SV_Target
     static bool GameFontReady(int index)
     {
         return g_gameFonts[index] && g_gameFonts[index]->gameFont == index && g_gameFonts[index]->texture.resource;
+    }
+
+    bool LoadingDiagramShowing()
+    {
+        return g_diagramSeenFrame != UINT64_MAX && g.frameNumber - g_diagramSeenFrame < 5;
     }
 
     bool TitleFontsAvailable()
@@ -2519,7 +2526,6 @@ float4 main(float4 position : SV_Position) : SV_Target
             }
         }
     }
-    static uint64_t g_diagramSeenFrame = UINT64_MAX;
     static bool g_diagramCapturing;
     static Texture g_diagramTexture;
 
