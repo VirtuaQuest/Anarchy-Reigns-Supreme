@@ -1,4 +1,4 @@
-"""Makes the download for a GitHub release, which RecompLauncher installs: out/release/Anarchy-Reigns-Supreme-<version>-Windows.zip.
+"""Makes the download for a GitHub release, which RecompLauncher installs: out/release/Anarchy-Reigns-Supreme-<version>-Windows-x64.zip.
 
 Usage: python tools/make_release.py v0.1.0
 
@@ -54,7 +54,7 @@ def main():
         print('Note: there are uncommitted changes. They are left out; the zip has commit', head)
 
     setup = build_setup()
-    path = os.path.join(OUT, f'Anarchy-Reigns-Supreme-{version}-Windows.zip')
+    path = os.path.join(OUT, f'Anarchy-Reigns-Supreme-{version}-Windows-x64.zip')
     subprocess.run(['git', '-C', ROOT, 'archive', '--format=zip', '-o', path, 'HEAD'], check=True)
     with zipfile.ZipFile(path, 'a', zipfile.ZIP_DEFLATED) as z:
         z.write(setup, 'ARSetup.exe')

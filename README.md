@@ -1,5 +1,7 @@
 # Anarchy Reigns Recompiled
 
+<a href="https://recomplauncher.com"><picture><source media="(prefers-color-scheme: dark)" srcset="https://recomplauncher.com/assets/press/launcher/badge-light.svg"><img alt="Get it on RecompLauncher" src="https://recomplauncher.com/assets/press/launcher/badge-dark.svg" height="48"></picture></a>
+
 A native PC port of Anarchy Reigns (Xbox 360) by static recompilation, for Windows with Direct3D 12. This project contains no game code or art. You build the game on your own PC from your own legally obtained copy. The downloads on the Releases page hold only this project's source and its Setup, never the game.
 
 This is an unofficial fan project, not affiliated with or endorsed by SEGA, PlatinumGames or Microsoft. All game names and trademarks belong to their owners.
@@ -42,9 +44,9 @@ When it's finished, press **Open launcher**, or start `out\build\ARRecomp\ARLaun
 
 ### With RecompLauncher
 
-The release download carries a `recomplauncher.json`, so [RecompLauncher](https://recomplauncher.com) can install it. You still need the tools above. Choose your disc image when it asks. The first time you press Play, Setup opens with your disc already chosen: press **Build**, and when it's finished, Play opens the game's launcher from then on. The launcher's own settings tab has the display mode, frame rate, internal resolution and multiplayer; the rest are in the game's launcher.
+The release download carries a `recomplauncher.json`, so [RecompLauncher](https://recomplauncher.com) can install it. You still need the tools above. Choose your disc image or the game's folder when it asks, and the launcher builds the game on its setup screen, once. Play then starts the game. All the settings of the game's launcher are on the game's page in RecompLauncher, apart from the player name and host's IP for multiplayer: to reach those, set **Play opens** to the game's launcher. The game's logs are in `run\logs`.
 
-To make a release: commit, then `python tools/make_release.py v1.2.3`, and attach `out\release\Anarchy-Reigns-Supreme-v1.2.3-Windows.zip` to a GitHub release with that tag.
+To make a release: commit, then `python tools/make_release.py v1.2.3`, and attach `out\release\Anarchy-Reigns-Supreme-v1.2.3-Windows-x64.zip` to a GitHub release with that tag.
 
 ### What Setup does
 

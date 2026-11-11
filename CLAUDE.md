@@ -23,9 +23,12 @@ things are the way they are) and `docs/DEBUGGING.md` for the switches and test s
   on the recompiler. After a recompiler change is committed there, refresh the copy with
   `python tools/update_xenonrecomp.py ../XenonRecomp` and commit it.
 - `Setup.bat` opens Setup, which does a whole build from a player's copy of the game, for anyone without this PC's layout. `tools/ui` is the look it shares with the launcher.
-- Releases (for RecompLauncher): `recomplauncher.json` at the top (schema at recomplauncher.com/schema/recomplauncher.json) starts
-  ARLauncher once built, otherwise the prebuilt ARSetup.exe, both with `--game <the player's iso>`. `python tools/make_release.py vX.Y.Z`
-  makes the zip from HEAD plus ARSetup.exe, and refuses anything made from the game.
+- Releases (for RecompLauncher): `recomplauncher.json` at the top (schema at recomplauncher.com/schema/recomplauncher.json, guide at
+  recomplauncher.com/sdk-files/recomplauncher-agent.md). Its setup screen runs `ARSetup.exe --prepare --game <copy>` (the whole build,
+  no window, `progress 0.42 Text` lines, exit codes in `PrepareResult`); Play starts ARLauncher once built (with `--play` it starts the
+  game straight away), otherwise ARSetup.exe. Started by RecompLauncher (`RECOMPLAUNCHER=1`), ARLauncher sends the game's output to
+  `run\logs`. Keep its `settings` in step with ARLauncher's keys. `python tools/make_release.py vX.Y.Z` makes the zip from HEAD plus
+  ARSetup.exe, and refuses anything made from the game.
 - `tools\build.bat [ARRecomp|ARLauncher|ARShaderTool]` — Ninja, clang-cl (a portable LLVM 19 in `LLVM_DIR` or
   `..\_tools\llvm`, otherwise the PATH), VS 2022, RelWithDebInfo, into `out\build`. DXC comes from the
   Windows SDK and is copied next to the exe.

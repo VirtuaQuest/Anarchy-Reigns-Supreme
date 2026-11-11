@@ -4,13 +4,20 @@
   "name": "Anarchy Reigns Supreme",
   "repo": "VirtuaQuest/Anarchy-Reigns-Supreme",
   "min": "0.90.0-beta.27",
-  "requires": ["start", "settings.ini", "settings.choices"],
+  "requires": ["start", "settings.ini", "settings.args", "settings.choices", "settings.groups"],
   "game": {
-    "kind": "iso",
-    "label": "Your Anarchy Reigns Xbox 360 disc image (.iso), unmodified",
+    "kind": "iso_or_folder",
+    "label": "Your copy of Anarchy Reigns for Xbox 360, unmodified: its disc image (.iso), or a folder of its files with default.xex.",
     "check": {
+      "file": "default.xex",
       "xdvdfs": "default.xex"
     }
+  },
+  "prepare": {
+    "program": ["ARSetup.exe", "out/setup/ARSetup.exe"],
+    "args": ["--prepare", "--game", "{game}"],
+    "label": "Building the game from your copy: 6 to 20 minutes, once",
+    "timeout": 3600
   },
   "start": {
     "program": ["out/build/ARRecomp/ARLauncher.exe", "ARSetup.exe"],
@@ -21,13 +28,61 @@
       "id": "main",
       "format": "ini",
       "file": [{ "path": "{install}/out/build/ARRecomp/launcher.ini" }],
-      "game_path": "Launcher/Game"
+      "game_path": "Launcher/Game",
+      "new": {
+        "Launcher/WorkingFolder": "..\\..\\..\\run",
+        "Launcher/Resolution": "3",
+        "Launcher/Display": "1",
+        "Launcher/FrameRate": "2",
+        "Launcher/AntiAliasing": "1",
+        "Launcher/RenderScale": "1",
+        "Launcher/Shadows": "0",
+        "Launcher/MouseSensitivity": "2",
+        "Launcher/InvertMouse": "0",
+        "Launcher/Anisotropic": "0",
+        "Launcher/TextureDetail": "1",
+        "Launcher/Sharpen": "3",
+        "Launcher/Ultrawide": "0",
+        "Launcher/VSync": "1",
+        "Launcher/DrawDistance": "3",
+        "Launcher/Online": "0",
+        "Launcher/Controller": "0"
+      }
     }
   ],
   "settings": [
     {
+      "id": "play",
+      "label": "Play opens",
+      "group": "Starting",
+      "in": "args",
+      "help": "The game starts with the settings here. The game's own launcher also has the player name and host's IP for multiplayer.",
+      "choices": [
+        { "label": "The game", "args": ["--play"] },
+        { "label": "The game's launcher", "args": [] }
+      ]
+    },
+    {
+      "id": "resolution",
+      "label": "Resolution",
+      "group": "Display",
+      "help": "The size of the picture on your screen.",
+      "choices": [
+        { "label": "1280 x 720", "set": { "Launcher/Resolution": "0" } },
+        { "label": "1366 x 768", "set": { "Launcher/Resolution": "1" } },
+        { "label": "1600 x 900", "set": { "Launcher/Resolution": "2" } },
+        { "label": "1920 x 1080", "set": { "Launcher/Resolution": "3" } },
+        { "label": "2560 x 1080 (ultrawide)", "set": { "Launcher/Resolution": "4" } },
+        { "label": "2560 x 1440", "set": { "Launcher/Resolution": "5" } },
+        { "label": "3440 x 1440 (ultrawide)", "set": { "Launcher/Resolution": "6" } },
+        { "label": "3840 x 2160", "set": { "Launcher/Resolution": "7" } }
+      ],
+      "defaults": { "Launcher/Resolution": "3" }
+    },
+    {
       "id": "display",
       "label": "Display mode",
+      "group": "Display",
       "choices": [
         { "label": "Windowed", "set": { "Launcher/Display": "0" } },
         { "label": "Borderless fullscreen", "set": { "Launcher/Display": "1" } },
@@ -38,7 +93,8 @@
     {
       "id": "frame_rate",
       "label": "Frame rate",
-      "help": "Above 30 is experimental. Multiplayer matches stay at 30.",
+      "group": "Display",
+      "help": "30 is the console's. Above 30 is experimental: some launches from fans may go too fast. The Tutorial and multiplayer matches stay at 30.",
       "choices": [
         { "label": "30 FPS (original)", "set": { "Launcher/FrameRate": "0" } },
         { "label": "60 FPS", "set": { "Launcher/FrameRate": "1" } },
@@ -49,6 +105,7 @@
     {
       "id": "render_scale",
       "label": "Internal resolution",
+      "group": "Display",
       "help": "What the game draws at. Higher is sharper and needs a faster graphics card.",
       "choices": [
         { "label": "1x (1280 x 720, original)", "set": { "Launcher/RenderScale": "0" } },
@@ -59,9 +116,141 @@
       "defaults": { "Launcher/RenderScale": "1" }
     },
     {
+      "id": "vsync",
+      "label": "V-Sync",
+      "group": "Display",
+      "help": "Waits for your screen's refresh, so the picture doesn't tear.",
+      "choices": [
+        { "label": "Off", "set": { "Launcher/VSync": "0" } },
+        { "label": "On", "set": { "Launcher/VSync": "1" } }
+      ],
+      "defaults": { "Launcher/VSync": "1" }
+    },
+    {
+      "id": "ultrawide",
+      "label": "Ultrawide",
+      "group": "Display",
+      "help": "On an ultrawide resolution, shows more to the sides instead of black bars.",
+      "choices": [
+        { "label": "Off", "set": { "Launcher/Ultrawide": "0" } },
+        { "label": "Wider view", "set": { "Launcher/Ultrawide": "1" } }
+      ],
+      "defaults": { "Launcher/Ultrawide": "0" }
+    },
+    {
+      "id": "antialiasing",
+      "label": "Anti-aliasing",
+      "group": "Graphics",
+      "help": "FXAA smooths jagged edges. It costs very little.",
+      "choices": [
+        { "label": "Off", "set": { "Launcher/AntiAliasing": "0" } },
+        { "label": "FXAA", "set": { "Launcher/AntiAliasing": "1" } }
+      ],
+      "defaults": { "Launcher/AntiAliasing": "1" }
+    },
+    {
+      "id": "anisotropic",
+      "label": "Texture filtering",
+      "group": "Graphics",
+      "help": "Keeps floors and walls sharp at shallow angles.",
+      "choices": [
+        { "label": "As the game asks", "set": { "Launcher/Anisotropic": "0" } },
+        { "label": "2x", "set": { "Launcher/Anisotropic": "1" } },
+        { "label": "4x", "set": { "Launcher/Anisotropic": "2" } },
+        { "label": "8x", "set": { "Launcher/Anisotropic": "3" } },
+        { "label": "16x", "set": { "Launcher/Anisotropic": "4" } }
+      ],
+      "defaults": { "Launcher/Anisotropic": "0" }
+    },
+    {
+      "id": "textures",
+      "label": "Texture detail",
+      "group": "Graphics",
+      "help": "Higher shows sharper textures in the distance. Ultra may shimmer.",
+      "choices": [
+        { "label": "Original", "set": { "Launcher/TextureDetail": "0" } },
+        { "label": "High", "set": { "Launcher/TextureDetail": "1" } },
+        { "label": "Ultra", "set": { "Launcher/TextureDetail": "2" } }
+      ],
+      "defaults": { "Launcher/TextureDetail": "1" }
+    },
+    {
+      "id": "draw_distance",
+      "label": "Draw distance",
+      "group": "Graphics",
+      "help": "How far away buildings and props keep their full detail.",
+      "choices": [
+        { "label": "Original", "set": { "Launcher/DrawDistance": "0" } },
+        { "label": "Far (2x)", "set": { "Launcher/DrawDistance": "1" } },
+        { "label": "Very far (4x)", "set": { "Launcher/DrawDistance": "2" } },
+        { "label": "Extreme (8x)", "set": { "Launcher/DrawDistance": "3" } },
+        { "label": "Always full detail", "set": { "Launcher/DrawDistance": "4" } }
+      ],
+      "defaults": { "Launcher/DrawDistance": "3" }
+    },
+    {
+      "id": "sharpen",
+      "label": "Sharpening",
+      "group": "Graphics",
+      "choices": [
+        { "label": "Off", "set": { "Launcher/Sharpen": "0" } },
+        { "label": "Low", "set": { "Launcher/Sharpen": "1" } },
+        { "label": "Medium", "set": { "Launcher/Sharpen": "2" } },
+        { "label": "High", "set": { "Launcher/Sharpen": "3" } }
+      ],
+      "defaults": { "Launcher/Sharpen": "3" }
+    },
+    {
+      "id": "shadows",
+      "label": "Shadows",
+      "group": "Graphics",
+      "choices": [
+        { "label": "On", "set": { "Launcher/Shadows": "0" } },
+        { "label": "Off", "set": { "Launcher/Shadows": "1" } }
+      ],
+      "defaults": { "Launcher/Shadows": "0" }
+    },
+    {
+      "id": "controller",
+      "label": "Controller",
+      "group": "Controls",
+      "help": "Which controller is player 1, when more than one is plugged in.",
+      "choices": [
+        { "label": "1", "set": { "Launcher/Controller": "0" } },
+        { "label": "2", "set": { "Launcher/Controller": "1" } },
+        { "label": "3", "set": { "Launcher/Controller": "2" } },
+        { "label": "4", "set": { "Launcher/Controller": "3" } }
+      ],
+      "defaults": { "Launcher/Controller": "0" }
+    },
+    {
+      "id": "mouse_sensitivity",
+      "label": "Mouse sensitivity",
+      "group": "Controls",
+      "help": "How fast the camera turns with the mouse. Keys are changed in the game's Options.",
+      "choices": [
+        { "label": "Low", "set": { "Launcher/MouseSensitivity": "0" } },
+        { "label": "Medium", "set": { "Launcher/MouseSensitivity": "1" } },
+        { "label": "High", "set": { "Launcher/MouseSensitivity": "2" } },
+        { "label": "Very high", "set": { "Launcher/MouseSensitivity": "3" } }
+      ],
+      "defaults": { "Launcher/MouseSensitivity": "2" }
+    },
+    {
+      "id": "invert_mouse",
+      "label": "Mouse look",
+      "group": "Controls",
+      "choices": [
+        { "label": "Normal", "set": { "Launcher/InvertMouse": "0" } },
+        { "label": "Inverted", "set": { "Launcher/InvertMouse": "1" } }
+      ],
+      "defaults": { "Launcher/InvertMouse": "0" }
+    },
+    {
       "id": "multiplayer",
       "label": "Multiplayer",
-      "help": "Experimental: play with other PCs, with no online service. See the project's page.",
+      "group": "Multiplayer",
+      "help": "Experimental: play with other PCs, with no online service. Your player name, and the host's IP to join from outside your network, are in the game's launcher.",
       "choices": [
         { "label": "Off", "set": { "Launcher/Online": "0" } },
         { "label": "On (experimental)", "set": { "Launcher/Online": "1" } }
@@ -70,10 +259,21 @@
     }
   ],
   "folders": {
-    "saves": [{ "path": "{install}/run/user/content" }],
-    "logs": [{ "path": "{install}/out/setup" }]
+    "saves": [{ "path": "{install}/run/user/content/00000001" }],
+    "logs": [
+      { "path": "{install}/run/logs", "if": "{install}/run/logs" },
+      { "path": "{install}/out/setup" }
+    ]
   },
-  "saves": ["{install}/run/user/content"],
+  "actions": [
+    { "id": "saves", "label": "Saves", "help": "Your save.", "open": "saves" },
+    { "id": "logs", "label": "Logs", "help": "The game's last 5 logs, or Setup's log before the game has run.", "open": "logs" }
+  ],
+  "saves": [
+    "{install}/run/user/content/00000001",
+    "{install}/run/user/key_bindings.txt",
+    "{install}/run/user/mouse_settings.txt"
+  ],
   "looks": {
     "graphics": "d3d12"
   }
