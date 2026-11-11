@@ -80,6 +80,8 @@ namespace
     HWND g_resolution, g_display, g_fps, g_aa, g_anisotropic, g_textures, g_drawDistance, g_sharpen, g_ultrawide, g_vsync, g_scale, g_shadows, g_mouse, g_invert, g_gamePath, g_online, g_onlinePeer, g_playerName, g_controller;
     theme::Form g_form;
     std::wstring g_folder, g_iniPath;
+    // A game given with --game (as RecompLauncher passes the player's copy): it takes the place of the one in launcher.ini.
+    std::wstring g_gameArgument;
 
     std::wstring ReadSetting(const wchar_t* key, const wchar_t* fallback)
     {
@@ -299,7 +301,7 @@ namespace
             y += 12;
             section(1, L"Game");
             g_form.AddLabel(x + 2, y, 90, 28, L"Game image");
-            g_gamePath = g_form.AddEdit(ID_GAME_PATH, x + 92, y, columnWidth - 92 - 86, ToRelative(ReadSetting(L"Game", L"")));
+            g_gamePath = g_form.AddEdit(ID_GAME_PATH, x + 92, y, columnWidth - 92 - 86, ToRelative(!g_gameArgument.empty() ? g_gameArgument : ReadSetting(L"Game", L"")));
             g_form.AddButton(ID_BROWSE, x + columnWidth - 80, y, 74, 28, L"Browse");
 
             g_form.AddButton(ID_LAUNCH, x + columnWidth - 200, WINDOW_HEIGHT - 64, 200, 44, L"Launch", true);
@@ -329,6 +331,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
     g_folder = exePath;
     g_folder.resize(g_folder.find_last_of(L'\\'));
     g_iniPath = g_folder + L"\\launcher.ini";
+
+    int count = 0;
+    if (wchar_t** arguments = CommandLineToArgvW(GetCommandLineW(), &count))
+    {
+        for (int i = 1; i + 1 < count; i++)
+        {
+            if (wcscmp(arguments[i], L"--game") == 0 && GetFileAttributesW(arguments[i + 1]) != INVALID_FILE_ATTRIBUTES)
+                g_gameArgument = std::filesystem::absolute(arguments[i + 1]).lexically_normal().wstring();
+        }
+        LocalFree(arguments);
+    }
 
     INITCOMMONCONTROLSEX controls{ sizeof(controls), ICC_STANDARD_CLASSES };
     InitCommonControlsEx(&controls);

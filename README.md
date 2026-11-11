@@ -1,8 +1,8 @@
 # Anarchy Reigns Recompiled
 
-A native PC port of Anarchy Reigns (Xbox 360) by static recompilation, for Windows with Direct3D 12. This project contains no game code or art. You build the game on your own PC from your own legally obtained copy, and there are no prebuilt downloads.
+A native PC port of Anarchy Reigns (Xbox 360) by static recompilation, for Windows with Direct3D 12. This project contains no game code or art. You build the game on your own PC from your own legally obtained copy. The downloads on the Releases page hold only this project's source and its Setup, never the game.
 
-This is an unofficial fan project, not affiliated with or endorsed by SEGA or PlatinumGames. All game names and trademarks belong to their owners.
+This is an unofficial fan project, not affiliated with or endorsed by SEGA, PlatinumGames or Microsoft. All game names and trademarks belong to their owners.
 
 ## Status
 
@@ -39,6 +39,12 @@ git clone https://github.com/VirtuaQuest/Anarchy-Reigns-Supreme.git
 Then run `Setup.bat` in `Anarchy-Reigns-Supreme`. Choose your game and, if you have it, your DLC folder, and press **Build**. Setup shows what it found and how far along it is. On a 10 core PC the whole build took about 6 minutes.
 
 When it's finished, press **Open launcher**, or start `out\build\ARRecomp\ARLauncher.exe`, to choose your settings and play.
+
+### With RecompLauncher
+
+The release download carries a `recomplauncher.json`, so [RecompLauncher](https://recomplauncher.com) can install it. You still need the tools above. Choose your disc image when it asks. The first time you press Play, Setup opens with your disc already chosen: press **Build**, and when it's finished, Play opens the game's launcher from then on. The launcher's own settings tab has the display mode, frame rate, internal resolution and multiplayer; the rest are in the game's launcher.
+
+To make a release: commit, then `python tools/make_release.py v1.2.3`, and attach `out\release\Anarchy-Reigns-Supreme-v1.2.3-Windows.zip` to a GitHub release with that tag.
 
 ### What Setup does
 

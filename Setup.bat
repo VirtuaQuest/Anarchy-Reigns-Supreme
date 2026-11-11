@@ -27,7 +27,7 @@ if errorlevel 1 (
 )
 
 :open
-start "" out\setup\ARSetup.exe
+start "" out\setup\ARSetup.exe %*
 exit /b 0
 
 :no_tools

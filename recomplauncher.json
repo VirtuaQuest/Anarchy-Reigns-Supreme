@@ -1,0 +1,80 @@
+{
+  "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
+  "format": 1,
+  "name": "Anarchy Reigns Supreme",
+  "repo": "VirtuaQuest/Anarchy-Reigns-Supreme",
+  "min": "0.90.0-beta.27",
+  "requires": ["start", "settings.ini", "settings.choices"],
+  "game": {
+    "kind": "iso",
+    "label": "Your Anarchy Reigns Xbox 360 disc image (.iso), unmodified",
+    "check": {
+      "xdvdfs": "default.xex"
+    }
+  },
+  "start": {
+    "program": ["out/build/ARRecomp/ARLauncher.exe", "ARSetup.exe"],
+    "args": ["--game", "{game}"]
+  },
+  "config": [
+    {
+      "id": "main",
+      "format": "ini",
+      "file": [{ "path": "{install}/out/build/ARRecomp/launcher.ini" }],
+      "game_path": "Launcher/Game"
+    }
+  ],
+  "settings": [
+    {
+      "id": "display",
+      "label": "Display mode",
+      "choices": [
+        { "label": "Windowed", "set": { "Launcher/Display": "0" } },
+        { "label": "Borderless fullscreen", "set": { "Launcher/Display": "1" } },
+        { "label": "Fullscreen", "set": { "Launcher/Display": "2" } }
+      ],
+      "defaults": { "Launcher/Display": "1" }
+    },
+    {
+      "id": "frame_rate",
+      "label": "Frame rate",
+      "help": "Above 30 is experimental. Multiplayer matches stay at 30.",
+      "choices": [
+        { "label": "30 FPS (original)", "set": { "Launcher/FrameRate": "0" } },
+        { "label": "60 FPS", "set": { "Launcher/FrameRate": "1" } },
+        { "label": "120 FPS", "set": { "Launcher/FrameRate": "2" } }
+      ],
+      "defaults": { "Launcher/FrameRate": "2" }
+    },
+    {
+      "id": "render_scale",
+      "label": "Internal resolution",
+      "help": "What the game draws at. Higher is sharper and needs a faster graphics card.",
+      "choices": [
+        { "label": "1x (1280 x 720, original)", "set": { "Launcher/RenderScale": "0" } },
+        { "label": "2x (2560 x 1440)", "set": { "Launcher/RenderScale": "1" } },
+        { "label": "3x (3840 x 2160)", "set": { "Launcher/RenderScale": "2" } },
+        { "label": "4x (5120 x 2880)", "set": { "Launcher/RenderScale": "3" } }
+      ],
+      "defaults": { "Launcher/RenderScale": "1" }
+    },
+    {
+      "id": "multiplayer",
+      "label": "Multiplayer",
+      "help": "Experimental: play with other PCs, with no online service. See the project's page.",
+      "choices": [
+        { "label": "Off", "set": { "Launcher/Online": "0" } },
+        { "label": "On (experimental)", "set": { "Launcher/Online": "1" } }
+      ],
+      "defaults": { "Launcher/Online": "0" }
+    }
+  ],
+  "folders": {
+    "saves": [{ "path": "{install}/run/user/content" }],
+    "logs": [{ "path": "{install}/out/setup" }]
+  },
+  "saves": ["{install}/run/user/content"],
+  "looks": {
+    "graphics": "d3d12"
+  }
+}

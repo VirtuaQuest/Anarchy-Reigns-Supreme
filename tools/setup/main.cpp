@@ -56,6 +56,8 @@ namespace
     int g_gameStatus, g_dlcStatus, g_stepLabel, g_timeLabel;
     int g_toolLabels[6];
     fs::path g_root, g_setupFolder, g_buildFolder, g_outFolder, g_runFolder, g_logPath;
+    // A game given with --game (as RecompLauncher passes the player's copy): chosen already, in place of the last one.
+    fs::path g_gameArgument;
 
     struct Toolchain
     {
@@ -875,6 +877,8 @@ namespace
         fs::path settings = g_setupFolder / L"setup.ini";
         std::wstring game = ReadSetting(settings, L"Setup", L"Game");
         std::wstring dlc = ReadSetting(settings, L"Setup", L"Dlc");
+        if (!g_gameArgument.empty())
+            game = g_gameArgument.wstring();
         if (game.empty())
         {
             fs::path launcherFolder = g_buildFolder / L"ARRecomp";
@@ -1055,6 +1059,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
     g_buildFolder = g_outFolder / L"build";
     g_runFolder = g_root / L"run";
     g_logPath = g_setupFolder / L"setup.log";
+
+    int count = 0;
+    if (wchar_t** arguments = CommandLineToArgvW(GetCommandLineW(), &count))
+    {
+        for (int i = 1; i + 1 < count; i++)
+        {
+            if (wcscmp(arguments[i], L"--game") == 0 && Exists(arguments[i + 1]))
+                g_gameArgument = fs::absolute(arguments[i + 1]).lexically_normal();
+        }
+        LocalFree(arguments);
+    }
 
     INITCOMMONCONTROLSEX controls{ sizeof(controls), ICC_STANDARD_CLASSES };
     InitCommonControlsEx(&controls);
