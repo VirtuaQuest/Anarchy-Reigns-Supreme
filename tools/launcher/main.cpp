@@ -52,6 +52,7 @@ namespace
     constexpr const wchar_t* MOUSE_VALUES[] = { L"0.5", L"1", L"2", L"4" };
     constexpr const wchar_t* INVERT_LABELS[] = { L"Normal", L"Inverted" };
     constexpr const wchar_t* CONTROLLER_LABELS[] = { L"1", L"2", L"3", L"4" };
+    constexpr const wchar_t* CONTROLLER_KIND_LABELS[] = { L"All kinds", L"Xbox only (XInput)" };
     constexpr const wchar_t* ONLINE_LABELS[] = { L"Off (original, no Xbox Live)", L"On (experimental: host and join)" };
 
     enum Control
@@ -71,6 +72,7 @@ namespace
         ID_MOUSE,
         ID_INVERT,
         ID_CONTROLLER,
+        ID_CONTROLLER_KINDS,
         ID_ONLINE,
         ID_ONLINE_PEER,
         ID_PLAYER_NAME,
@@ -79,7 +81,7 @@ namespace
         ID_LAUNCH,
     };
 
-    HWND g_resolution, g_display, g_fps, g_aa, g_anisotropic, g_textures, g_drawDistance, g_sharpen, g_ultrawide, g_vsync, g_scale, g_shadows, g_mouse, g_invert, g_gamePath, g_online, g_onlinePeer, g_playerName, g_controller;
+    HWND g_resolution, g_display, g_fps, g_aa, g_anisotropic, g_textures, g_drawDistance, g_sharpen, g_ultrawide, g_vsync, g_scale, g_shadows, g_mouse, g_invert, g_gamePath, g_online, g_onlinePeer, g_playerName, g_controller, g_controllerKinds;
     theme::Form g_form;
     std::wstring g_folder, g_iniPath;
     // A game given with --game (as RecompLauncher passes the player's copy): it takes the place of the one in launcher.ini.
@@ -322,6 +324,7 @@ namespace
         std::wstring gamePath = ToAbsolute(GetText(g_gamePath));
         int online = int(SendMessageW(g_online, CB_GETCURSEL, 0, 0));
         int controller = int(SendMessageW(g_controller, CB_GETCURSEL, 0, 0));
+        int controllerKinds = int(SendMessageW(g_controllerKinds, CB_GETCURSEL, 0, 0));
         std::wstring onlinePeer = GetText(g_onlinePeer), playerName = GetText(g_playerName);
 
         if (GetFileAttributesW(gamePath.c_str()) == INVALID_FILE_ATTRIBUTES)
@@ -347,6 +350,7 @@ namespace
         WriteSetting(L"Game", ToRelative(gamePath));
         WriteSetting(L"Online", std::to_wstring(online));
         WriteSetting(L"Controller", std::to_wstring(controller));
+        WriteSetting(L"ControllerKinds", std::to_wstring(controllerKinds));
         WriteSetting(L"OnlinePeer", onlinePeer);
         WriteSetting(L"PlayerName", playerName);
 
@@ -361,6 +365,8 @@ namespace
             (invert == 1 ? L" --invert-mouse" : L"");
         if (controller != 0)
             command += L" --controller " + std::to_wstring(controller + 1);
+        if (controllerKinds == 1)
+            command += L" --xinput";
         if (online == 1)
         {
             command += L" --online";
@@ -459,8 +465,9 @@ namespace
 
             x = right;
             y = 96;
-            section(3, L"Controls");
+            section(4, L"Controls");
             g_controller = combo(L"Controller", ID_CONTROLLER, CONTROLLER_LABELS, std::size(CONTROLLER_LABELS), L"Controller");
+            g_controllerKinds = combo(L"Controller types", ID_CONTROLLER_KINDS, CONTROLLER_KIND_LABELS, std::size(CONTROLLER_KIND_LABELS), L"ControllerKinds");
             g_mouse = combo(L"Mouse sensitivity", ID_MOUSE, MOUSE_LABELS, std::size(MOUSE_LABELS), L"MouseSensitivity", 1);
             g_invert = combo(L"Mouse look", ID_INVERT, INVERT_LABELS, std::size(INVERT_LABELS), L"InvertMouse");
             y += 12;

@@ -21,6 +21,7 @@ target_link_libraries(ARRecomp PRIVATE
     xenia_shader
     fmt::fmt
     o1heap
+    SDL3::SDL3-static
     winmm
     xinput
     xaudio2

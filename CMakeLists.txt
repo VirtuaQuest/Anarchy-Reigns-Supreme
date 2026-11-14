@@ -29,6 +29,16 @@ add_subdirectory(thirdparty/xenia)
 # The game's code comes from the player's copy of the game, by the recompiler above: before that exists, only the tools can be built (Setup.bat does this).
 file(GLOB AR_GENERATED_CODE CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/ARRecompLib/ppc/*.cpp")
 if (AR_GENERATED_CODE)
+    # SDL reads controllers of every kind (ARRecomp/kernel/gamepads.cpp). SDL 3.4.20 (zlib license, thirdparty/SDL/LICENSE.txt):
+    # the release's CMakeLists.txt, cmake, include and src, unchanged. Only its controller parts are built, into the game.
+    foreach (option SDL_SHARED SDL_TEST_LIBRARY SDL_TESTS SDL_EXAMPLES SDL_INSTALL SDL_AUDIO SDL_VIDEO SDL_GPU SDL_RENDER SDL_CAMERA SDL_POWER SDL_DIALOG SDL_TRAY)
+        set(${option} OFF CACHE BOOL "" FORCE)
+    endforeach()
+    foreach (option SDL_STATIC SDL_JOYSTICK SDL_HAPTIC SDL_HIDAPI SDL_SENSOR)
+        set(${option} ON CACHE BOOL "" FORCE)
+    endforeach()
+    add_subdirectory(thirdparty/SDL EXCLUDE_FROM_ALL)
+
     add_subdirectory(ARRecompLib)
     add_subdirectory(ARRecomp)
 else()

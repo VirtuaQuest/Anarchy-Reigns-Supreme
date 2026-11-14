@@ -34,6 +34,14 @@ title; the Anarchy Reigns specifics are at the end. `git log` has the details of
   arguments; interrupts go to a target CPU (PCR + 0x10C holds the current processor).
 - Message boxes (XShowMessageBoxUI) can simply answer with button 0.
 - o1heap needs `O1HEAP_CLZ=__builtin_clzll` on Windows.
+- Controllers: XInput alone sees only Xbox controllers (and Steam's virtual ones, for games Steam starts). SDL 3's
+  gamepads read everything, the 2026 Steam Controller included, with Steam running. `kernel/gamepads.cpp` is a drop-in
+  for XInputGetState/GetCapabilities/SetState, so the XAM input code stays the same. SDL is built from
+  `thirdparty/SDL` with only its joystick, haptic, HIDAPI and sensor parts (about 240 C files, under a minute).
+  It runs on its own thread, publishing state every 2 ms. Hints that matter: `SDL_JOYSTICK_HIDAPI_STEAM=1` (the 2015
+  Steam Controller is off by default), background events on (XInput reads in the background too) and timer resolution
+  0 (the game sets it). Face buttons are positional, so the bottom one is A. SDL's rumble times out, so it's asked
+  again every second while on.
 
 ## GPU: command processor
 

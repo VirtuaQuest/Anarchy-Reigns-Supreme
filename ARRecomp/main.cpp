@@ -46,6 +46,7 @@ static void PrintUsage()
         "  --online-peer IP       Also look for games at these addresses (comma separated).\n"
         "  --player-name NAME     Your name in multiplayer.\n"
         "  --controller N         Which controller this copy reads, 1 to 4 (default 1).\n"
+        "  --xinput               Only Xbox controllers, through XInput (default: every kind, through SDL).\n"
         "  --make-icon            Takes the icon from the game, unseen and silent, then exits (setup uses this).\n");
 }
 
@@ -99,6 +100,8 @@ int main(int argc, char* argv[])
         }
         else if (arg == "--controller" && i + 1 < argc)
             _putenv_s("AR_CONTROLLER", argv[++i]);
+        else if (arg == "--xinput")
+            _putenv_s("AR_XINPUT", "1");
         else if (arg == "--make-icon")
         {
             _putenv_s("AR_MAKE_ICON", "1");

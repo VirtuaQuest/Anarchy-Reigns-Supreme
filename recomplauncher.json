@@ -46,7 +46,8 @@
         "Launcher/VSync": "1",
         "Launcher/DrawDistance": "3",
         "Launcher/Online": "0",
-        "Launcher/Controller": "0"
+        "Launcher/Controller": "0",
+        "Launcher/ControllerKinds": "0"
       }
     }
   ],
@@ -222,6 +223,17 @@
         { "label": "4", "set": { "Launcher/Controller": "3" } }
       ],
       "defaults": { "Launcher/Controller": "0" }
+    },
+    {
+      "id": "controller_kinds",
+      "label": "Controller types",
+      "group": "Controls",
+      "help": "All kinds: Xbox, PlayStation, Switch, Steam and other controllers. Xbox only reads them as the game did before.",
+      "choices": [
+        { "label": "All kinds", "set": { "Launcher/ControllerKinds": "0" } },
+        { "label": "Xbox only (XInput)", "set": { "Launcher/ControllerKinds": "1" } }
+      ],
+      "defaults": { "Launcher/ControllerKinds": "0" }
     },
     {
       "id": "mouse_sensitivity",

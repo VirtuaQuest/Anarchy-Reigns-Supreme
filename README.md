@@ -12,7 +12,8 @@ This is an unofficial fan project, not affiliated with or endorsed by SEGA, Plat
 |---|---|
 | Campaign, Tutorial, Training, Gallery | Playable |
 | Frame rate | 30, 60 or 120 fps setting |
-| Keyboard and mouse | Built in, with keys you can change in Options. Controllers work too |
+| Keyboard and mouse | Built in, with keys you can change in Options |
+| Controllers | Xbox, PlayStation, Switch, Steam and most others, read as an Xbox 360 controller, with rumble. The launcher's **Controller types** setting, *Xbox only*, goes back to reading only Xbox controllers |
 | DLC | Bayonetta, the extra game modes and Jack's golden chainsaw all work if you have them |
 | Multiplayer | **Work in progress**, off by default: see [Multiplayer](#multiplayer) |
 
